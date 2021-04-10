@@ -1,0 +1,13 @@
+[package]
+name = "tzhs-chat"
+version = "0.1.0"
+authors = ["Dowland Aiello <dowlandaiello@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+actix-web = "3.3.2"
+actix = "0.11.1"
+
+[lib]
+name = "tzc"
+path = "src/lib.rs"
