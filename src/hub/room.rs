@@ -8,7 +8,7 @@ use std::{collections::HashSet, error::Error, fmt, sync::Arc};
 use tokio::time::Duration;
 
 /// The default rooms spawned at program start.
-pub const DEFAULT_ROOMS: [&'static str; 5] =
+pub const DEFAULT_ROOMS: [&str; 5] =
     ["general", "freshmen", "sophomores", "juniors", "seniors"];
 
 /// Represents some extraneous condition causing a room to function incorrectly.

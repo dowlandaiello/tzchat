@@ -3,10 +3,10 @@ use actix::Message;
 use std::{convert::TryFrom, error::Error, fmt, str::FromStr, sync::Arc};
 
 /// The character used to separate arguments in a message
-pub const MSG_ARG_DELIM: &'static str = "␝";
+pub const MSG_ARG_DELIM: &str = "␝";
 
 /// The character used to separate users in a group
-pub const USER_LIST_DELIM: &'static str = "␟";
+pub const USER_LIST_DELIM: &str = "␟";
 
 #[derive(Clone)]
 pub enum MsgContext {

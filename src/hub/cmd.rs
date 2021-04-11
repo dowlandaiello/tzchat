@@ -2,7 +2,7 @@ use std::{str::FromStr, error::Error, fmt, sync::Arc};
 use super::{room::{RoomError, Room}, msg::NotifyTxt};
 use actix::{Recipient, Message, Addr};
 
-pub const CMD_NAMES: [(&'static str, CmdTypes); 2] =
+pub const CMD_NAMES: [(&str, CmdTypes); 2] =
     [("MSG", CmdTypes::Msg), ("JOIN_ROOM", CmdTypes::JoinRoom)];
 
 /// The types of commands able to be issued by users.
@@ -48,7 +48,7 @@ impl FromStr for Cmd {
             .collect();
 
         // A command name must be specified, at least
-        if parts.len() == 0 {
+        if parts.is_empty() {
             return Err(ParseCmdError::NullRequest);
         }
 
