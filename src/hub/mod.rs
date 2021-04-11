@@ -2,6 +2,14 @@ pub mod cmd;
 pub mod msg;
 pub mod room;
 
+/// The authentication module also provides name resolution for a google user (i.e., users can
+/// claim as many usernames as they want, but no two users can have the same username). Only two
+/// rules are enforced by the authentication module:
+/// - a user may not access a room they are not privy to
+/// - a user may not publish a message if the username they are publishing from is not associated
+/// with their current google cookie
+pub mod auth;
+
 use actix::{fut, Actor, ActorFuture, Addr, AsyncContext, Context, Handler, StreamHandler};
 use actix_web_actors::ws::{Message as WsMessage, ProtocolError, WebsocketContext};
 use cmd::{Cmd, CmdTypes, JoinRoom};
