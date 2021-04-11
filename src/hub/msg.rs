@@ -1,5 +1,5 @@
 use actix::Message;
-use std::{fmt, sync::Arc};
+use std::{fmt, str::FromStr, sync::Arc};
 
 /// The character used to separate arguments in a message
 pub const MSG_ARG_DELIM: &'static str = "␝";
@@ -28,6 +28,23 @@ impl fmt::Display for MsgContext {
     }
 }
 
+impl FromStr for MsgContext {
+    type Err = ParseMsgError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut parts: Vec<String> = s.split(USER_LIST_DELIM).map(|s| s.to_owned()).collect();
+
+        // A message can reside in:
+        // - a channel (with just a name like #general)
+        // - a whisper between >1 users (names separated)
+        match parts.len() {
+            0 => Err(ParseMsgError::PartsMissing),
+            1 => Ok(Self::Channel(parts.remove(0))),
+            _ => Ok(Self::Whisper(parts)),
+        }
+    }
+}
+
 /// An intermediary representation of a raw text message.
 #[derive(Clone)]
 pub struct Msg {
@@ -39,6 +56,31 @@ pub struct Msg {
 impl fmt::Display for Msg {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "MSG␝{}␝{}␝{}", self.ctx, self.sender, self.text)
+    }
+}
+
+/// Occurs when a message is malformed (e.g., unrecognized CMD)
+pub enum ParseMsgError {
+    PartsMissing,
+}
+
+impl FromStr for Msg {
+    type Err = ParseMsgError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<&str> = s.split(MSG_ARG_DELIM).collect();
+
+        // See display impl
+        if parts.len() < 4 {
+            return Err(ParseMsgError::PartsMissing);
+        }
+
+        // Parsing the context requires string manipulation that could go wrong
+        parts[1].parse().map(|ctx| Self {
+            ctx,
+            sender: parts[2].to_owned(),
+            text: parts[3].to_owned(),
+        })
     }
 }
 

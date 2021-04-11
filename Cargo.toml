@@ -6,7 +6,10 @@ edition = "2018"
 
 [dependencies]
 actix-web = "3.3.2"
-actix = "0.11.1"
+actix = "0.10.0"
+actix-web-actors = "3.0.0"
+futures = "0.3.14"
+futures-util = "0.3.14"
 
 [lib]
 name = "tzc"
