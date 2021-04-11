@@ -146,6 +146,10 @@ impl Handler<SubscribeToRoom> for MsgCache {
         // TODO: This is a naive implementation. We'll want to determine the number of messages
         // that can be reliably transferred at once and then lazily load the rest.
         //
+        // TODO: Also, we might want to consider caching messages locally and performing some kind
+        // of merkel tree negotiation to determine which parts we don't have, although this is a
+        // linear history, so a hash might just work (assuming no faulty client logic)
+        //
         // Alert the user of all the cached messages
         for new_msg in self.messages.iter() {
             match msg.0.do_send(NotifyTxt(new_msg.clone())) {
