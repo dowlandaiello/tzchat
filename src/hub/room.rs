@@ -102,7 +102,10 @@ impl Handler<SubscribeToRoom> for Room {
     type Result = ();
 
     fn handle(&mut self, msg: SubscribeToRoom, _ctx: &mut Self::Context) {
-        self.clients.insert(msg.0);
+        // Record the client and inform them of all the messages they missed in the last 24 hours.
+        // The cache itself handles this. See cache def
+        self.clients.insert(msg.0.clone());
+        self.cache.do_send(msg);
     }
 }
 
@@ -133,5 +136,22 @@ impl Handler<StoreMsg> for MsgCache {
         self.messages.push(Arc::clone(&msg_handle));
 
         NotifyTxt(msg_handle)
+    }
+}
+
+impl Handler<SubscribeToRoom> for MsgCache {
+    type Result = ();
+
+    fn handle(&mut self, msg: SubscribeToRoom, _ctx: &mut Context<Self>) -> Self::Result {
+        // TODO: This is a naive implementation. We'll want to determine the number of messages
+        // that can be reliably transferred at once and then lazily load the rest.
+        //
+        // Alert the user of all the cached messages
+        for new_msg in self.messages.iter() {
+            match msg.0.do_send(NotifyTxt(new_msg.clone())) {
+                Ok(_) => (),
+                Err(e) => warn!("client bootstrap error: {}", e),
+            }
+        }
     }
 }
