@@ -16,6 +16,7 @@ pub enum RoomError {
     NotAuthorized,
     RoomDoesNotExist,
     MailboxError(MailboxError),
+    Misc(String),
 }
 
 impl fmt::Display for RoomError {
@@ -24,6 +25,7 @@ impl fmt::Display for RoomError {
             Self::NotAuthorized => write!(f, "not authorized to access this resource"),
             Self::RoomDoesNotExist => write!(f, "room does not exist"),
             Self::MailboxError(e) => e.fmt(f),
+            Self::Misc(e) => e.fmt(f),
         }
     }
 }

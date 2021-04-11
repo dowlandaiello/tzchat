@@ -10,6 +10,7 @@ use room::{Room, RoomError, SubscribeToRoom};
 use std::{collections::HashMap, convert::TryInto, sync::Arc};
 
 /// Houses any number of chat rooms.
+#[derive(Default)]
 pub struct Hub {
     topics: HashMap<String, Addr<Room>>,
 }
@@ -45,6 +46,15 @@ impl Handler<JoinRoom> for Hub {
 pub struct WsSocket {
     hub: Addr<Hub>,
     joined_rooms: HashMap<Arc<String>, Addr<Room>>,
+}
+
+impl WsSocket {
+    pub fn new(hub: Addr<Hub>) -> Self {
+        Self {
+            hub,
+            joined_rooms: HashMap::new(),
+        }
+    }
 }
 
 impl Actor for WsSocket {
