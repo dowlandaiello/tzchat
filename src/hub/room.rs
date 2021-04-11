@@ -1,6 +1,10 @@
-use super::msg::{Msg, NotifyTxt, StoreMsg};
-use actix::{Actor, Addr, Context, Handler, Recipient, MailboxError};
+use super::msg::{Msg, NotifyTxt, PubMsg, StoreMsg};
+use actix::{
+    Actor, ActorFuture, Addr, AsyncContext, Context, ContextFutureSpawner, Handler, MailboxError,
+    Recipient, WrapFuture,
+};
 use std::{collections::HashSet, error::Error, fmt, sync::Arc};
+use tokio::time::Duration;
 
 /// The default rooms spawned at program start.
 pub const DEFAULT_ROOMS: [&'static str; 5] =
@@ -50,10 +54,35 @@ impl Actor for Room {
     type Context = Context<Self>;
 }
 
+impl Handler<PubMsg> for Room {
+    type Result = ();
+
+    fn handle(&mut self, msg: PubMsg, ctx: &mut Self::Context) {
+        // Cache the message for the next 24 hours and send it to all clients
+        self.cache
+            .send(StoreMsg(msg.0))
+            .into_actor(self)
+            .map(|res, act, _ctx| {
+                // After the cache caches the msg, it gives us a copy that we can lend out
+                match res {
+                    Ok(publishable_msg) => {
+                        for client in act.clients.iter() {
+                            if let Err(e) = client.do_send(publishable_msg.clone()) {
+                                error!("error while broadcasting MSG: {}", e);
+                            }
+                        }
+                    }
+                    Err(e) => error!("error while broadcasting MSG: {}", e),
+                };
+            })
+            .spawn(ctx);
+    }
+}
+
 impl Handler<SubscribeToRoom> for Room {
     type Result = ();
 
-    fn handle(&mut self, msg: SubscribeToRoom, ctx: &mut Self::Context) {
+    fn handle(&mut self, msg: SubscribeToRoom, _ctx: &mut Self::Context) {
         self.clients.insert(msg.0);
     }
 }
@@ -66,6 +95,13 @@ pub struct MsgCache {
 
 impl Actor for MsgCache {
     type Context = Context<Self>;
+
+    fn started(&mut self, ctx: &mut Self::Context) {
+        // After starting, spawn a daemon that automatically clears the cache every 24 hours
+        ctx.run_interval(Duration::from_secs(86_400), |act, _ctx| {
+            act.messages.clear();
+        });
+    }
 }
 
 impl Handler<StoreMsg> for MsgCache {

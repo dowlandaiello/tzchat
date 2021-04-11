@@ -1,4 +1,4 @@
-use std::{str::FromStr, error::Error, fmt};
+use std::{str::FromStr, error::Error, fmt, sync::Arc};
 use super::{room::{RoomError, Room}, msg::NotifyTxt};
 use actix::{Recipient, Message, Addr};
 
@@ -6,7 +6,7 @@ pub const CMD_NAMES: [(&'static str, CmdTypes); 2] =
     [("MSG", CmdTypes::Msg), ("JOIN_ROOM", CmdTypes::JoinRoom)];
 
 /// The types of commands able to be issued by users.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub enum CmdTypes {
     Msg,
     JoinRoom,
@@ -68,4 +68,4 @@ impl FromStr for Cmd {
 /// A message sent to the hub to connect a socket to the room with the given name.
 #[derive(Message)]
 #[rtype(result = "Result<Addr<Room>, RoomError>")]
-pub struct JoinRoom(pub String, pub Recipient<NotifyTxt>);
+pub struct JoinRoom(pub Arc<String>, pub Recipient<NotifyTxt>);

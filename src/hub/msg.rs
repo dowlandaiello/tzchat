@@ -1,5 +1,6 @@
+use super::cmd::{Cmd, CmdTypes};
 use actix::Message;
-use std::{fmt, str::FromStr, sync::Arc};
+use std::{convert::TryFrom, error::Error, fmt, str::FromStr, sync::Arc};
 
 /// The character used to separate arguments in a message
 pub const MSG_ARG_DELIM: &'static str = "␝";
@@ -48,9 +49,9 @@ impl FromStr for MsgContext {
 /// An intermediary representation of a raw text message.
 #[derive(Clone)]
 pub struct Msg {
-    ctx: MsgContext,
-    sender: String,
-    text: String,
+    pub ctx: MsgContext,
+    pub sender: String,
+    pub text: String,
 }
 
 impl fmt::Display for Msg {
@@ -59,9 +60,29 @@ impl fmt::Display for Msg {
     }
 }
 
+impl TryFrom<Cmd> for Msg {
+    type Error = ParseMsgError;
+
+    fn try_from(mut c: Cmd) -> Result<Self, Self::Error> {
+        if c.kind != CmdTypes::Msg {
+            Err(ParseMsgError::ExtraneousCmd)
+        } else if c.args.len() < 3 {
+            Err(ParseMsgError::PartsMissing)
+        } else {
+            c.args.remove(0).parse().map(|ctx| Self {
+                ctx,
+                sender: c.args.remove(0),
+                text: c.args.remove(0),
+            })
+        }
+    }
+}
+
 /// Occurs when a message is malformed (e.g., unrecognized CMD)
+#[derive(Debug)]
 pub enum ParseMsgError {
     PartsMissing,
+    ExtraneousCmd,
 }
 
 impl FromStr for Msg {
@@ -84,8 +105,19 @@ impl FromStr for Msg {
     }
 }
 
+impl fmt::Display for ParseMsgError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::PartsMissing => write!(f, "request was missing parts"),
+            Self::ExtraneousCmd => write!(f, "command is not a message"),
+        }
+    }
+}
+
+impl Error for ParseMsgError {}
+
 /// A message sent from the hub to a client listening to a topic.
-#[derive(MessageResponse, Message)]
+#[derive(MessageResponse, Message, Clone)]
 #[rtype(result = "()")]
 pub struct NotifyTxt(pub Arc<Msg>);
 

@@ -2,17 +2,12 @@ pub mod cmd;
 pub mod msg;
 pub mod room;
 
-use actix::{
-    fut,
-    prelude::{Future, Request},
-    Actor, ActorFuture, Addr, AsyncContext, Context, Handler, 
-    StreamHandler,
-};
+use actix::{fut, Actor, ActorFuture, Addr, AsyncContext, Context, Handler, StreamHandler};
 use actix_web_actors::ws::{Message as WsMessage, ProtocolError, WebsocketContext};
 use cmd::{Cmd, CmdTypes, JoinRoom};
-use msg::NotifyTxt;
+use msg::{Msg, NotifyTxt, PubMsg};
 use room::{Room, RoomError, SubscribeToRoom};
-use std::collections::HashMap;
+use std::{collections::HashMap, convert::TryInto, sync::Arc};
 
 /// Houses any number of chat rooms.
 pub struct Hub {
@@ -33,8 +28,11 @@ impl Actor for Hub {
 impl Handler<JoinRoom> for Hub {
     type Result = Result<Addr<Room>, RoomError>;
 
-    fn handle(&mut self, msg: JoinRoom, ctx: &mut Self::Context) -> Result<Addr<Room>, RoomError> {
-        let room = self.topics.get(&msg.0).ok_or(RoomError::RoomDoesNotExist)?;
+    fn handle(&mut self, msg: JoinRoom, _ctx: &mut Self::Context) -> Result<Addr<Room>, RoomError> {
+        let room = self
+            .topics
+            .get(msg.0.as_str())
+            .ok_or(RoomError::RoomDoesNotExist)?;
         room.do_send(SubscribeToRoom(msg.1));
 
         // TODO: BLOCK NON-PRIVILEGED USERS
@@ -46,7 +44,7 @@ impl Handler<JoinRoom> for Hub {
 /// A client connected to the hub.
 pub struct WsSocket {
     hub: Addr<Hub>,
-    joined_rooms: HashMap<String, Addr<Room>>,
+    joined_rooms: HashMap<Arc<String>, Addr<Room>>,
 }
 
 impl Actor for WsSocket {
@@ -62,26 +60,44 @@ impl StreamHandler<Result<WsMessage, ProtocolError>> for WsSocket {
                 Ok(mut cmd) => match cmd.kind {
                     // Handle all of the tz-specific message types
                     CmdTypes::JoinRoom => {
+                        let room_name = Arc::new(cmd.args.remove(0));
+
                         // Join the room
-                        let res = self.hub.send(JoinRoom(cmd.args.remove(0), ctx.address().recipient()));
+                        let res = self
+                            .hub
+                            .send(JoinRoom(Arc::clone(&room_name), ctx.address().recipient()));
 
                         // Record the address of the room after joining
-                        let record_room_fut = fut::wrap_future::<_, Self>(res).map(|res, act, ctx| {
-                            match res {
-                                Ok(v) => {
-                                    Ok(())
-                                },
-                                Err(e) => Err(()),
-                            };
-                        });
+                        let record_room_fut =
+                            fut::wrap_future::<_, Self>(res).map(|res, act, ctx| {
+                                match res {
+                                    Ok(res) => match res {
+                                        Ok(room_addr) => {
+                                            act.joined_rooms.insert(room_name, room_addr);
+                                        }
+                                        Err(e) => ctx.text(format!("error: {:?}", e)),
+                                    },
+                                    Err(e) => ctx.text(format!("error: {:?}", e)),
+                                };
+                            });
 
                         ctx.spawn(record_room_fut);
                     }
-                    CmdTypes::Msg => (),
+                    // The user wishes to broadcast a message to other users in the provided context
+                    CmdTypes::Msg => match <Cmd as TryInto<Msg>>::try_into(cmd) {
+                        Ok(msg) => {
+                            if let Some(room) = self.joined_rooms.get(&msg.ctx.to_string()) {
+                                room.do_send(PubMsg(msg));
+                            } else {
+                                ctx.text("error: room does not exist")
+                            }
+                        }
+                        Err(e) => ctx.text(format!("error: {:?}", e)),
+                    },
                 },
                 Err(e) => ctx.text(format!("error: {:?}", e)),
             },
-            Ok(WsMessage::Binary(bin)) => ctx.binary(bin),
+            Ok(WsMessage::Binary(_)) => (),
             _ => (),
         }
     }
@@ -90,5 +106,7 @@ impl StreamHandler<Result<WsMessage, ProtocolError>> for WsSocket {
 impl Handler<NotifyTxt> for WsSocket {
     type Result = ();
 
-    fn handle(&mut self, msg: NotifyTxt, ctx: &mut Self::Context) {}
+    fn handle(&mut self, msg: NotifyTxt, ctx: &mut Self::Context) {
+        ctx.text(msg.0.to_string())
+    }
 }
