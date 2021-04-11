@@ -1,6 +1,7 @@
 use super::msg::{Msg, NotifyTxt, PubMsg, StoreMsg};
 use actix::{
     Actor, ActorFuture, Addr, AsyncContext, Context, ContextFutureSpawner, Handler, MailboxError,
+    prelude::SendError,
     Recipient, WrapFuture,
 };
 use std::{collections::HashSet, error::Error, fmt, sync::Arc};
@@ -68,10 +69,26 @@ impl Handler<PubMsg> for Room {
                 // After the cache caches the msg, it gives us a copy that we can lend out
                 match res {
                     Ok(publishable_msg) => {
+                        // While sending to each of the clients, we might encounter some that have
+                        // detached. Clean these up
+                        let mut removables = vec![];
+
                         for client in act.clients.iter() {
                             if let Err(e) = client.do_send(publishable_msg.clone()) {
-                                error!("error while broadcasting MSG: {}", e);
+                                match e {
+                                    // Since the client is no longer listening, drop it
+                                    SendError::Closed(_) => {
+                                        info!("dropping closed client #{}", act.clients.len());
+                                        removables.push(client.clone());
+                                    },
+                                    _ => error!("error while broadcasting MSG: {}", e),
+                                }
                             }
+                        }
+
+                        // Clear dead clients
+                        for to_remove in removables {
+                            act.clients.remove(&to_remove);
                         }
                     }
                     Err(e) => error!("error while broadcasting MSG: {}", e),

@@ -42,6 +42,7 @@ impl FromStr for Cmd {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut parts: Vec<String> = s
+            .trim()
             .split(super::msg::MSG_ARG_DELIM)
             .map(|s| s.to_owned())
             .collect();

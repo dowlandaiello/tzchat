@@ -30,6 +30,8 @@ impl Handler<JoinRoom> for Hub {
     type Result = Result<Addr<Room>, RoomError>;
 
     fn handle(&mut self, msg: JoinRoom, _ctx: &mut Self::Context) -> Result<Addr<Room>, RoomError> {
+        info!("user joined room {}", msg.0);
+
         let room = self
             .topics
             .get(msg.0.as_str())
