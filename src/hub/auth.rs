@@ -4,7 +4,7 @@ use std::{
     collections::{HashMap, HashSet},
     error::Error,
     fmt,
-    sync::Weak,
+    rc::Rc,
 };
 
 /// Acquires a semi-permanent, exclusive lock on the username for the user with the given session.
@@ -17,6 +17,7 @@ pub struct RegisterAlias(pub String, pub Addr<WsSocket>);
 #[derive(Debug)]
 pub enum AuthError {
     AliasTaken,
+    SessionNonexistent,
 }
 
 impl fmt::Display for AuthError {
@@ -32,13 +33,16 @@ impl Error for AuthError {}
 #[derive(Default)]
 pub struct Authenticator {
     // The usernames claimed by an individual with a particular email
-    claimed_usernames: HashMap<String, HashSet<String>>,
+    user_aliases: HashMap<String, HashSet<Rc<String>>>,
+
+    // All of the usernames claimed by users
+    claimed_usernames: HashSet<Rc<String>>,
 
     // A user's session is represented by their socket connection. A user can be authenticated
     // through one of two ways:
     // - Session token as cookie
     // - Session token generated after google login from email
-    sessions: HashMap<Addr<WsSocket>, Weak<String>>,
+    sessions: HashMap<Addr<WsSocket>, Rc<String>>,
 }
 
 impl Actor for Authenticator {
@@ -49,13 +53,14 @@ impl Handler<RegisterAlias> for Authenticator {
     type Result = Result<(), AuthError>;
 
     fn handle(&mut self, msg: RegisterAlias, ctx: &mut Self::Context) -> Result<(), AuthError> {
-        if self.claimed_usernames.contains(msg.0) {
+        if self.claimed_usernames.contains(&msg.0) {
             return Err(AuthError::AliasTaken);
-        } 
-
-        if let Some(email) = self.sessions.get(msg.0) {
-            self.claimed_usernames
-            Ok(self.
         }
+
+        let email = self.sessions.get(&msg.1).ok_or(AuthError::SessionNonexistent)?;
+        let username = Rc::new(msg.0);
+
+        self.claimed_usernames.insert(username.clone());
+        self.user_aliases.entry(email).or_insert([]);
     }
 }
