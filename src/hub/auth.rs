@@ -1,6 +1,11 @@
-use actix::{Actor, Addr, Context, Handler};
 use super::WsSocket;
-use std::{collections::{HashMap, HashSet}, sync::Weak, fmt};
+use actix::{Actor, Addr, Context, Handler};
+use std::{
+    collections::{HashMap, HashSet},
+    error::Error,
+    fmt,
+    sync::Weak,
+};
 
 /// Acquires a semi-permanent, exclusive lock on the username for the user with the given session.
 /// The alias shall persist, after the session is closed, but not after the server closes.
@@ -21,6 +26,8 @@ impl fmt::Display for AuthError {
         }
     }
 }
+
+impl Error for AuthError {}
 
 #[derive(Default)]
 pub struct Authenticator {
@@ -43,7 +50,12 @@ impl Handler<RegisterAlias> for Authenticator {
 
     fn handle(&mut self, msg: RegisterAlias, ctx: &mut Self::Context) -> Result<(), AuthError> {
         if self.claimed_usernames.contains(msg.0) {
-            
+            return Err(AuthError::AliasTaken);
+        } 
+
+        if let Some(email) = self.sessions.get(msg.0) {
+            self.claimed_usernames
+            Ok(self.
         }
     }
 }
