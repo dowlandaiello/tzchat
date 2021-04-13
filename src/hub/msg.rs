@@ -1,6 +1,9 @@
 use super::cmd::{Cmd, CmdTypes};
 use actix::Message;
-use std::{convert::TryFrom, error::Error, fmt, str::FromStr, sync::Arc};
+use std::{
+    collections::HashSet, convert::TryFrom, error::Error, fmt, iter::FromIterator, str::FromStr,
+    sync::Arc,
+};
 
 /// The character used to separate arguments in a message
 pub const MSG_ARG_DELIM: &str = "␝";
@@ -11,7 +14,7 @@ pub const USER_LIST_DELIM: &str = "␟";
 #[derive(Clone)]
 pub enum MsgContext {
     /// The message is part of a DM between 2+ users
-    Whisper(Vec<String>),
+    Whisper(HashSet<Arc<String>>),
 
     /// The message was sent in a normal channel
     Channel(String),
@@ -23,7 +26,15 @@ impl fmt::Display for MsgContext {
             // Any number of actors owns users. Downcast to a &str from Rc
             // This design choice was made bc actix doesn't like lifetimes in
             // type signatures.
-            Self::Whisper(users) => write!(f, "{}", users.join(USER_LIST_DELIM)),
+            Self::Whisper(users) => write!(
+                f,
+                "{}",
+                users
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<&str>>()
+                    .join(USER_LIST_DELIM)
+            ),
             Self::Channel(c) => c.fmt(f),
         }
     }
@@ -41,7 +52,9 @@ impl FromStr for MsgContext {
         match parts.len() {
             0 => Err(ParseMsgError::PartsMissing),
             1 => Ok(Self::Channel(parts.remove(0))),
-            _ => Ok(Self::Whisper(parts)),
+            _ => Ok(Self::Whisper(HashSet::from_iter(
+                parts.into_iter().map(|s| Arc::new(s)),
+            ))),
         }
     }
 }
