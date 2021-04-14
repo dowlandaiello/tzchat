@@ -7,3 +7,5 @@ use super::hub::{Hub, WsSocket};
 pub async fn index(req: HttpRequest, data: web::Data<Addr<Hub>>, stream: web::Payload) -> Result<HttpResponse, Error> {
     ws::start(WsSocket::new((**data).to_owned()), &req, stream)
 }
+
+pub async fn
