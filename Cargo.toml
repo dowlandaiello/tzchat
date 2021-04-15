@@ -14,6 +14,9 @@ log = "0.4.14"
 env_logger = "0.8.3"
 tokio = { version = "1.4.0", features = ["full"] }
 oauth2 = { version = "3.0.0", features = ["futures-03", "reqwest-010"], default-features = false }
+ed25519-dalek = { version = "1.0.1", features = ["default", "serde"] }
+rand = "0.7"
+rust-crypto = "^0.2"
 
 [lib]
 name = "tzc"

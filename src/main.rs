@@ -2,7 +2,7 @@ use actix::{Actor, Addr};
 use actix_web::{web, App, HttpServer};
 use oauth2::{basic::BasicClient, AuthUrl, ClientId, ClientSecret, RedirectUrl, TokenUrl};
 use std::{env, sync::Arc};
-use tzc::{http_entry::index, hub::Hub};
+use tzc::{http_entry::{ws_index, ui_index}, hub::Hub};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -32,7 +32,7 @@ async fn main() -> std::io::Result<()> {
                     .map(|dev_var| dev_var.parse::<bool>().unwrap())
                     .unwrap_or(false)
                 {
-                    "http://localhost:8080".to_owned()
+                    "http://localhost:8080/oauth/callback".to_owned()
                 } else {
                     "https://tzhs.chat/oauth/callback".to_owned()
                 },
@@ -46,7 +46,8 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .data(hub_addr.clone())
             .data(oauth_client.clone())
-            .route("/ws/", web::get().to(index))
+            .route("/ws/", web::get().to(ws_index))
+            .service(ui_index)
     })
     .bind("127.0.0.1:8080")?
     .run()

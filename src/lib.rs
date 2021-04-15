@@ -4,6 +4,9 @@
 extern crate actix;
 
 #[macro_use]
+extern crate actix_web;
+
+#[macro_use]
 extern crate log;
 
 pub mod hub;

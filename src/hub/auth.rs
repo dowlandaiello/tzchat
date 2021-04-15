@@ -1,7 +1,9 @@
 use super::{msg::MsgContext, WsSocket};
 use actix::{Actor, Addr, Context, Handler};
+use ed25519_dalek::Keypair;
 use std::{
     collections::{HashMap, HashSet},
+    default::Default,
     error::Error,
     fmt,
     sync::Arc,
@@ -44,7 +46,6 @@ impl fmt::Display for AuthError {
 
 impl Error for AuthError {}
 
-#[derive(Default)]
 pub struct Authenticator {
     // The usernames claimed by an individual with a particular email
     user_aliases: HashMap<Arc<String>, HashSet<Arc<String>>>,
@@ -57,6 +58,33 @@ pub struct Authenticator {
     // - Session token as cookie
     // - Session token generated after google login from email
     sessions: HashMap<Addr<WsSocket>, Arc<String>>,
+
+    // The keypair used by the authenticator to sign claims relating to use identity claims. This
+    // bypasses the need for repetitive calls to google cloud, requiring only one call per user per
+    // device.
+    claimant_keypair: Keypair,
+
+    // The random number generator used by the authenticator
+    rng: rand::rngs::ThreadRng,
+
+    // PKCE challenges issued to users, identified by unique session tokens issued to the users
+    session_challenges: HashMap<
+
+    cookie_enc_key: 
+}
+
+impl Default for Authenticator {
+    fn default() -> Self {
+        let mut rng = rand::thread_rng();
+
+        Self {
+            user_aliases: Default::default(),
+            claimed_usernames: Default::default(),
+            sessions: Default::default(),
+            claimant_keypair: Keypair::generate(&mut rng),
+            rng,
+        }
+    }
 }
 
 impl Actor for Authenticator {
