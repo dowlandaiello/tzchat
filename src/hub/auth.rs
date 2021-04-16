@@ -1,9 +1,15 @@
 use super::{msg::MsgContext, WsSocket};
 use actix::{Actor, Addr, Context, Handler};
-use ed25519_dalek::Keypair;
-use rand::Rng;
 use blake3::Hash;
-use oauth2::{PkceCodeVerifier, CsrfToken};
+use ed25519_dalek::Keypair;
+use oauth2::{CsrfToken, PkceCodeVerifier};
+use rand::Rng;
+use ring::{
+    aead::{
+        BoundKey, Nonce, NonceSequence, OpeningKey, SealingKey, UnboundKey, AES_256_GCM,
+    },
+    error::Unspecified,
+};
 use std::{
     collections::{HashMap, HashSet},
     default::Default,
@@ -74,7 +80,27 @@ pub struct Authenticator {
     session_challenges: HashMap<Hash, OauthSessionChallenge>,
 
     // The key used to encrypt cookie / session variables
-    cookie_enc_key: ,
+    cookie_enc_keypair: (
+        SealingKey<AuthenticatorUidGen>,
+        OpeningKey<AuthenticatorUidGen>,
+    ),
+
+    // The nonce generator used for making keypairs and identifying users
+    nonce_gen: AuthenticatorUidGen,
+}
+
+/// Generates a unique nonce, or UID for a user. Used for encrypting user details and uniquely
+/// identifying users. The same nonce should never be used more than once, hence the name.
+#[derive(Default)]
+pub struct AuthenticatorUidGen {
+    // The random number generator used to generate nonces from the seed (index)
+    rng: rand::rngs::ThreadRng,
+}
+
+impl NonceSequence for AuthenticatorUidGen {
+    fn advance(&mut self) -> Result<Nonce, Unspecified> {
+        Ok(Nonce::assume_unique_for_key(self.rng.gen()))
+    }
 }
 
 /// Oauth sessions must have certain details persisted server-side that are used to ensure that a
@@ -91,12 +117,28 @@ impl Default for Authenticator {
     fn default() -> Self {
         let mut rng = rand::thread_rng();
 
+        // Generate an initial nonce for the opening and sealing keys
+        let mut nonce_gen = AuthenticatorUidGen::default();
+        let seed_nonce = nonce_gen.advance().expect("failed to obtain a seed nonce");
+
         Self {
             user_aliases: Default::default(),
             claimed_usernames: Default::default(),
             sessions: Default::default(),
             claimant_keypair: Keypair::generate(&mut rng),
-            cookie_enc_key: aes::cbc_encryptor(KeySize::KeySize256, rng.gen(), ),
+            cookie_enc_keypair: (
+                SealingKey::new(
+                    // NOTE: This shouldn't ever fail, but if it does, that's fine, because it will
+                    // only fail ONCE, at the very start. Panicking here is completely acceptable.
+                    UnboundKey::new(&AES_256_GCM, seed_nonce.as_ref()).expect("failed to obtain a sealing key"),
+                    AuthenticatorUidGen::default(),
+                ),
+                OpeningKey::new(
+                    UnboundKey::new(&AES_256_GCM, seed_nonce.as_ref()).expect("failed to obtain an opening key"),
+                    AuthenticatorUidGen::default(),
+                ),
+            ),
+            nonce_gen,
             rng,
             session_challenges: HashMap::new(),
         }
