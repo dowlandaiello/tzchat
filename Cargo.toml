@@ -16,7 +16,8 @@ tokio = { version = "1.4.0", features = ["full"] }
 oauth2 = { version = "3.0.0", features = ["futures-03", "reqwest-010"], default-features = false }
 ed25519-dalek = { version = "1.0.1", features = ["default", "serde"] }
 rand = "0.7"
-rust-crypto = "^0.2"
+ring = { version = "0.16.20", features = ["alloc", "dev_urandom_fallback", "std"] }
+blake3 = "0.3.7"
 
 [lib]
 name = "tzc"
