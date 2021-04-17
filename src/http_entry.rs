@@ -12,5 +12,5 @@ pub async fn ws_index(req: HttpRequest, data: web::Data<Addr<Hub>>, stream: web:
 
 #[get("/index.html")]
 pub async fn ui_index(req: HttpRequest, data: web::Data<Arc<BasicClient>>) -> impl Responder {
-
+    // If the user is already signed in, verify their details and then proceed
 }

@@ -5,7 +5,7 @@ use ed25519_dalek::Keypair;
 use oauth2::{CsrfToken, PkceCodeVerifier};
 use rand::Rng;
 use ring::{
-    aead::{BoundKey, Nonce, NonceSequence, OpeningKey, SealingKey, UnboundKey, AES_256_GCM},
+    aead::{Aad, BoundKey, Nonce, NonceSequence, OpeningKey, SealingKey, UnboundKey, AES_256_GCM},
     error::Unspecified,
 };
 use std::{
@@ -15,6 +15,16 @@ use std::{
     fmt,
     sync::Arc,
 };
+
+/// Instructs the authenticator to treat the session as though it has the identity of the indicated
+/// user. Note: do not use this message unless the user has ALREADY been authenticated.
+#[derive(Message)]
+#[rtype(result = "")]
+pub struct AssumeIdentity {
+    pub session: Addr<WsSocket>,
+
+    pub email: String,
+}
 
 /// Acquires an encrypted unique identifier for a session with the provided auth challenge belongig
 /// to it. Encrypted UID should be saved client-side to allow access after client consents.
@@ -151,10 +161,28 @@ impl Default for Authenticator {
     }
 }
 
+/*
+ * TODO - for tomorrow:
+ * [] Add a new message type to decrypt and validate session cookies
+ * [] Check for session cookie denoting already logged in on http_entry /index.html call
+ * [] Send new session cookie method and await response
+ */
+
 impl Actor for Authenticator {
     type Context = Context<Self>;
 }
 
+/// Allows the HTTP server to log the user in after checking their identity by verifying ecdsa
+/// details.
+impl Handler<AssumeIdentity> for Authenticator {
+    type Result = ();
+
+    fn handle(&mut self, msg: AssumeIdentity, _ctx: &mut Self::Context) {
+        self.sessions.insert(msg.session, Arc::new(msg.email));
+    }
+}
+
+/// Allows the HTTP server to persist and verify challenge details for OAuth.
 impl Handler<RegisterSessionChallenge> for Authenticator {
     type Result = Result<Vec<u8>, ()>;
 
@@ -175,7 +203,7 @@ impl Handler<RegisterSessionChallenge> for Authenticator {
         let mut client_ver = Vec::new();
         self.cookie_enc_keypair
             .0
-            .seal_in_place_append_tag(uid, &client_ver);
+            .seal_in_place_append_tag(Aad::from(uid.as_bytes()), &mut client_ver);
 
         Ok(client_ver)
     }
