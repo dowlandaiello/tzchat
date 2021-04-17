@@ -5,9 +5,7 @@ use ed25519_dalek::Keypair;
 use oauth2::{CsrfToken, PkceCodeVerifier};
 use rand::Rng;
 use ring::{
-    aead::{
-        BoundKey, Nonce, NonceSequence, OpeningKey, SealingKey, UnboundKey, AES_256_GCM,
-    },
+    aead::{BoundKey, Nonce, NonceSequence, OpeningKey, SealingKey, UnboundKey, AES_256_GCM},
     error::Unspecified,
 };
 use std::{
@@ -17,6 +15,12 @@ use std::{
     fmt,
     sync::Arc,
 };
+
+/// Acquires an encrypted unique identifier for a session with the provided auth challenge belongig
+/// to it. Encrypted UID should be saved client-side to allow access after client consents.
+#[derive(Message)]
+#[rtype(result = "Result<Vec<u8>, ()>")]
+pub struct RegisterSessionChallenge(pub OauthSessionChallenge);
 
 /// Acquires a semi-permanent, exclusive lock on the username for the user with the given session.
 /// The alias shall persist, after the session is closed, but not after the server closes.
@@ -105,7 +109,7 @@ impl NonceSequence for AuthenticatorUidGen {
 
 /// Oauth sessions must have certain details persisted server-side that are used to ensure that a
 /// man-in-the-middle attack isn't happening.
-struct OauthSessionChallenge {
+pub struct OauthSessionChallenge {
     // The pkce token itself doesn't need to be persisted. Verifier can be used to ensure integrity
     pkce_code_verifier: PkceCodeVerifier,
 
@@ -130,11 +134,13 @@ impl Default for Authenticator {
                 SealingKey::new(
                     // NOTE: This shouldn't ever fail, but if it does, that's fine, because it will
                     // only fail ONCE, at the very start. Panicking here is completely acceptable.
-                    UnboundKey::new(&AES_256_GCM, seed_nonce.as_ref()).expect("failed to obtain a sealing key"),
+                    UnboundKey::new(&AES_256_GCM, seed_nonce.as_ref())
+                        .expect("failed to obtain a sealing key"),
                     AuthenticatorUidGen::default(),
                 ),
                 OpeningKey::new(
-                    UnboundKey::new(&AES_256_GCM, seed_nonce.as_ref()).expect("failed to obtain an opening key"),
+                    UnboundKey::new(&AES_256_GCM, seed_nonce.as_ref())
+                        .expect("failed to obtain an opening key"),
                     AuthenticatorUidGen::default(),
                 ),
             ),
@@ -147,6 +153,32 @@ impl Default for Authenticator {
 
 impl Actor for Authenticator {
     type Context = Context<Self>;
+}
+
+impl Handler<RegisterSessionChallenge> for Authenticator {
+    type Result = Result<Vec<u8>, ()>;
+
+    fn handle(
+        &mut self,
+        msg: RegisterSessionChallenge,
+        _ctx: &mut Self::Context,
+    ) -> Result<Vec<u8>, ()> {
+        // Generate a unique identifier for the user
+        let uid = blake3::hash(
+            self.nonce_gen
+                .advance()
+                .map(|nonce| nonce.as_ref())
+                .map_err(|_| ())?,
+        );
+
+        // Encrypt the user's session token
+        let mut client_ver = Vec::new();
+        self.cookie_enc_keypair
+            .0
+            .seal_in_place_append_tag(uid, &client_ver);
+
+        Ok(client_ver)
+    }
 }
 
 impl Handler<RegisterAlias> for Authenticator {
