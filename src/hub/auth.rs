@@ -2,13 +2,14 @@ use super::{msg::MsgContext, WsSocket};
 use actix::{Actor, Addr, Context, Handler};
 use actix_web::http::Cookie;
 use blake3::Hash;
-use ed25519_dalek::Keypair;
+use ed25519_dalek::{Keypair, Signature};
 use oauth2::{CsrfToken, PkceCodeVerifier};
 use rand::Rng;
 use ring::{
     aead::{Aad, BoundKey, Nonce, NonceSequence, OpeningKey, SealingKey, UnboundKey, AES_256_GCM},
     error::Unspecified,
 };
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     default::Default,
@@ -19,8 +20,18 @@ use std::{
 
 /// Returns an error if the given JWT is not valid. Returns the enclosed email if valid.
 #[derive(Message)]
-#[rtype(result = "Result<(), AuthError>")]
+#[rtype(result = "Result<String, AuthError>")]
 pub struct AssertJwtValid<'a>(pub Cookie<'a>);
+
+/// A JWT issued and signed by the server attesting that the user owns the email.
+#[derive(Serialize, Deserialize)]
+pub struct IdentityAttestation {
+    /// The email the server attests that the user owns
+    pub email: String,
+
+    /// The attestation
+    pub sig: Signature,
+}
 
 /// Instructs the authenticator to treat the session as though it has the identity of the indicated
 /// user. Note: do not use this message unless the user has ALREADY been authenticated.
@@ -63,6 +74,7 @@ pub enum AuthError {
     InvalidToken,
     DecryptionError,
     EncryptionError,
+    SerializationError(Box<dyn Error>),
 }
 
 impl fmt::Display for AuthError {
@@ -75,6 +87,7 @@ impl fmt::Display for AuthError {
             Self::InvalidToken => write!(f, "invalid token"),
             Self::DecryptionError => write!(f, "failed to decrypt message"),
             Self::EncryptionError => write!(f, "failed to encrypt message"),
+            Self::SerializationError(e) => write!(f, "failed to serialize message: {:?}", e),
         }
     }
 }
@@ -144,8 +157,7 @@ impl Default for Authenticator {
         let mut rng = rand::thread_rng();
 
         // Generate an initial nonce for the opening and sealing keys
-        let mut nonce_gen = AuthenticatorUidGen::default();
-        let seed_nonce = nonce_gen.advance().expect("failed to obtain a seed nonce");
+        let key_seed: [u8; 32] = rng.gen();
 
         Self {
             user_aliases: Default::default(),
@@ -156,17 +168,17 @@ impl Default for Authenticator {
                 SealingKey::new(
                     // NOTE: This shouldn't ever fail, but if it does, that's fine, because it will
                     // only fail ONCE, at the very start. Panicking here is completely acceptable.
-                    UnboundKey::new(&AES_256_GCM, seed_nonce.as_ref())
+                    UnboundKey::new(&AES_256_GCM, key_seed.as_ref())
                         .expect("failed to obtain a sealing key"),
                     AuthenticatorUidGen::default(),
                 ),
                 OpeningKey::new(
-                    UnboundKey::new(&AES_256_GCM, seed_nonce.as_ref())
+                    UnboundKey::new(&AES_256_GCM, key_seed.as_ref())
                         .expect("failed to obtain an opening key"),
                     AuthenticatorUidGen::default(),
                 ),
             ),
-            nonce_gen,
+            nonce_gen: AuthenticatorUidGen::default(),
             rng,
             session_challenges: HashMap::new(),
         }
@@ -175,7 +187,7 @@ impl Default for Authenticator {
 
 /*
  * TODO - for tomorrow:
- * [] Add a new message type to decrypt and validate session cookies
+ * [*] Add a new message type to decrypt and validate session cookies
  * [] Check for session cookie denoting already logged in on http_entry /index.html call
  * [] Send new session cookie method and await response
  */
@@ -185,13 +197,27 @@ impl Actor for Authenticator {
 }
 
 impl<'a> Handler<AssertJwtValid<'a>> for Authenticator {
-    type Result = Result<(), AuthError>;
+    type Result = Result<String, AuthError>;
 
-    fn handle(&mut self, msg: AssertJwtValid, _ctx: &mut Self::Context) -> Result<String, AuthError> {
+    fn handle(
+        &mut self,
+        msg: AssertJwtValid,
+        _ctx: &mut Self::Context,
+    ) -> Result<String, AuthError> {
         let mut unencrypted_jwt = msg.0.to_string().into_bytes();
-        self.cookie_enc_keypair.1.open_in_place(Aad::empty(), &mut unencrypted_jwt).map_err(|_| AuthError::DecryptionError)?;
+        self.cookie_enc_keypair
+            .1
+            .open_in_place(Aad::empty(), &mut unencrypted_jwt)
+            .map_err(|_| AuthError::DecryptionError)?;
 
-        let sig
+        // JWT's are stored as serde/bincode-encoded bytes on the client's end. Deserialize and
+        // verify it. Then, move out the email.
+        let jwt: IdentityAttestation =
+            bincode::deserialize(&unencrypted_jwt).map_err(|e| AuthError::SerializationError(e))?;
+        self.claimant_keypair
+            .verify(jwt.email.as_bytes(), &jwt.sig)
+            .map(|_| jwt.email)
+            .map_err(|_| AuthError::InvalidToken)
     }
 }
 
@@ -215,12 +241,13 @@ impl Handler<RegisterSessionChallenge> for Authenticator {
         _ctx: &mut Self::Context,
     ) -> Result<Vec<u8>, AuthError> {
         // Generate a unique identifier for the user
+        let nonce = self.nonce_gen.advance().map_err(|_| AuthError::EncryptionError)?;
         let uid = blake3::hash(
-            self.nonce_gen
-                .advance()
-                .map(|nonce| nonce.as_ref())
-                .map_err(|_| AuthError::EncryptionError)?,
+            nonce.as_ref()
         );
+
+        // Persist the challenge
+        self.session_challenges.insert(uid, msg.0);
 
         // Encrypt the user's session token. The original UID must be cloned, since we need to
         // encrypt and own it
