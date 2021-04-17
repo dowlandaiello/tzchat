@@ -1,5 +1,6 @@
 use super::{msg::MsgContext, WsSocket};
 use actix::{Actor, Addr, Context, Handler};
+use actix_web::http::Cookie;
 use blake3::Hash;
 use ed25519_dalek::Keypair;
 use oauth2::{CsrfToken, PkceCodeVerifier};
@@ -16,6 +17,11 @@ use std::{
     sync::Arc,
 };
 
+/// Returns an error if the given JWT is not valid. Returns the enclosed email if valid.
+#[derive(Message)]
+#[rtype(result = "Result<(), AuthError>")]
+pub struct AssertJwtValid<'a>(pub Cookie<'a>);
+
 /// Instructs the authenticator to treat the session as though it has the identity of the indicated
 /// user. Note: do not use this message unless the user has ALREADY been authenticated.
 #[derive(Message)]
@@ -29,7 +35,7 @@ pub struct AssumeIdentity {
 /// Acquires an encrypted unique identifier for a session with the provided auth challenge belongig
 /// to it. Encrypted UID should be saved client-side to allow access after client consents.
 #[derive(Message)]
-#[rtype(result = "Result<Vec<u8>, ()>")]
+#[rtype(result = "Result<Vec<u8>, AuthError>")]
 pub struct RegisterSessionChallenge(pub OauthSessionChallenge);
 
 /// Acquires a semi-permanent, exclusive lock on the username for the user with the given session.
@@ -54,6 +60,9 @@ pub enum AuthError {
     SessionNonexistent,
     PermissionDenied,
     IllegalAlias,
+    InvalidToken,
+    DecryptionError,
+    EncryptionError,
 }
 
 impl fmt::Display for AuthError {
@@ -63,6 +72,9 @@ impl fmt::Display for AuthError {
             Self::SessionNonexistent => write!(f, "session does not exist"),
             Self::PermissionDenied => write!(f, "access to the requested resource denied"),
             Self::IllegalAlias => write!(f, "illegal username"),
+            Self::InvalidToken => write!(f, "invalid token"),
+            Self::DecryptionError => write!(f, "failed to decrypt message"),
+            Self::EncryptionError => write!(f, "failed to encrypt message"),
         }
     }
 }
@@ -172,6 +184,17 @@ impl Actor for Authenticator {
     type Context = Context<Self>;
 }
 
+impl<'a> Handler<AssertJwtValid<'a>> for Authenticator {
+    type Result = Result<(), AuthError>;
+
+    fn handle(&mut self, msg: AssertJwtValid, _ctx: &mut Self::Context) -> Result<String, AuthError> {
+        let mut unencrypted_jwt = msg.0.to_string().into_bytes();
+        self.cookie_enc_keypair.1.open_in_place(Aad::empty(), &mut unencrypted_jwt).map_err(|_| AuthError::DecryptionError)?;
+
+        let sig
+    }
+}
+
 /// Allows the HTTP server to log the user in after checking their identity by verifying ecdsa
 /// details.
 impl Handler<AssumeIdentity> for Authenticator {
@@ -184,28 +207,29 @@ impl Handler<AssumeIdentity> for Authenticator {
 
 /// Allows the HTTP server to persist and verify challenge details for OAuth.
 impl Handler<RegisterSessionChallenge> for Authenticator {
-    type Result = Result<Vec<u8>, ()>;
+    type Result = Result<Vec<u8>, AuthError>;
 
     fn handle(
         &mut self,
         msg: RegisterSessionChallenge,
         _ctx: &mut Self::Context,
-    ) -> Result<Vec<u8>, ()> {
+    ) -> Result<Vec<u8>, AuthError> {
         // Generate a unique identifier for the user
         let uid = blake3::hash(
             self.nonce_gen
                 .advance()
                 .map(|nonce| nonce.as_ref())
-                .map_err(|_| ())?,
+                .map_err(|_| AuthError::EncryptionError)?,
         );
 
-        // Encrypt the user's session token
-        let mut client_ver = Vec::new();
+        // Encrypt the user's session token. The original UID must be cloned, since we need to
+        // encrypt and own it
+        let mut client_ver = uid.as_bytes().to_vec();
         self.cookie_enc_keypair
             .0
-            .seal_in_place_append_tag(Aad::from(uid.as_bytes()), &mut client_ver);
-
-        Ok(client_ver)
+            .seal_in_place_append_tag(Aad::empty(), &mut client_ver)
+            .map(|_| client_ver)
+            .map_err(|_| AuthError::EncryptionError)
     }
 }
 
