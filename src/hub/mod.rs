@@ -15,16 +15,12 @@ use actix_web_actors::ws::{Message as WsMessage, ProtocolError, WebsocketContext
 use cmd::{Cmd, CmdTypes, JoinRoom};
 use msg::{Msg, NotifyTxt, PubMsg};
 use room::{Room, RoomError, SubscribeToRoom};
-use auth::Authenticator;
 use std::{collections::HashMap, convert::TryInto, sync::Arc};
 
 /// Houses any number of chat rooms.
 #[derive(Default)]
 pub struct Hub {
     topics: HashMap<String, Addr<Room>>,
-
-    /// The default authenticator utilized by the hub
-    pub auth: Authenticator,
 }
 
 impl Actor for Hub {

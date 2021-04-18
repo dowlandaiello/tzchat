@@ -4,8 +4,8 @@ use actix_web::{web, App, HttpServer};
 use oauth2::{basic::BasicClient, AuthUrl, ClientId, ClientSecret, RedirectUrl, TokenUrl};
 use std::{env, sync::Arc};
 use tzc::{
-    http_entry::ws_index,
-    hub::Hub,
+    http_entry::ui_index,
+    hub::{auth::Authenticator, Hub},
 };
 
 #[actix_web::main]
@@ -45,14 +45,16 @@ async fn main() -> std::io::Result<()> {
         ),
     );
     let hub_addr: Addr<Hub> = Hub::start_default();
+    let auth_addr: Addr<Authenticator> = Authenticator::start_default();
 
     HttpServer::new(move || {
         App::new()
             .data(hub_addr.clone())
+            .data(auth_addr.clone())
             .data(oauth_client.clone())
-            .route("/ws/", web::get().to(ws_index))
+            .route("/index.html", web::get().to(ui_index))
             // When users request files like index.html, just get them from the static folder
-            .service(Files::new("/static", "./static"))
+            .service(Files::new("/", "./static"))
     })
     .bind("127.0.0.1:8080")?
     .run()
