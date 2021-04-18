@@ -1,5 +1,5 @@
 use super::{msg::MsgContext, WsSocket};
-use actix::{Actor, Addr, Context, Handler};
+use actix::{Actor, Addr, Context, Handler, ResponseFuture};
 use actix_web::{
     dev::HttpResponseBuilder,
     error::ResponseError,
@@ -8,7 +8,11 @@ use actix_web::{
 };
 use blake3::Hash;
 use ed25519_dalek::{Keypair, Signature};
-use oauth2::{CsrfToken, PkceCodeVerifier};
+use futures::{future, FutureExt, TryFutureExt};
+use oauth2::{
+    basic::BasicClient, reqwest::{async_http_client, self}, AsyncCodeTokenRequest, AuthorizationCode,
+    CsrfToken, PkceCodeVerifier,
+};
 use rand::Rng;
 use ring::{
     aead::{Aad, BoundKey, Nonce, NonceSequence, OpeningKey, SealingKey, UnboundKey, AES_256_GCM},
@@ -17,6 +21,7 @@ use ring::{
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
+    convert::TryInto,
     default::Default,
     error::Error,
     fmt,
@@ -29,6 +34,24 @@ pub const HTTP_JWT_COOKIE_NAME: &str = "perm_session";
 
 /// See above
 pub const HTTP_CHALLENGE_COOKIE_NAME: &str = "oauth_session";
+
+/// Asserts that the oauth challenge has retained its integrity, while issuing the user a
+/// longer-term JWT session token for WS communication.
+#[derive(Message)]
+#[rtype(result = "Result<String, AuthError>")]
+pub struct ExecuteChallenge<'a> {
+    /// The encrypted UID linking the user to their challenge validators
+    pub uid_cookie: Cookie<'a>,
+
+    /// The `state` variable returned by Google. Should match our records
+    pub csrf_token: CsrfToken,
+
+    /// The token issued by the oauth server to grant access to the email API
+    pub authorization_code: AuthorizationCode,
+
+    /// The oauth client to use for acquiring user details
+    pub client: &'a BasicClient,
+}
 
 /// Returns an error if the given JWT is not valid. Returns the enclosed email if valid.
 #[derive(Message)]
@@ -87,6 +110,7 @@ pub enum AuthError {
     InvalidToken,
     DecryptionError,
     EncryptionError,
+    OauthError(String),
     SerializationError(String),
 }
 
@@ -245,6 +269,48 @@ impl Default for Authenticator {
 
 impl Actor for Authenticator {
     type Context = Context<Self>;
+}
+
+impl<'a> Handler<ExecuteChallenge<'a>> for Authenticator {
+    type Result = ResponseFuture<Result<String, AuthError>>;
+
+    fn handle(&mut self, msg: ExecuteChallenge, ctx: &mut Self::Context) -> Self::Result {
+        // The user will provide an ENCRYPTED UID linking to their CSRF and PKCE validators
+        let mut decrypted_challenge_uid = msg.uid_cookie.to_string().into_bytes();
+
+        Box::pin(
+            future::ready(
+                self.cookie_enc_keypair
+                    .1
+                    .open_in_place(Aad::empty(), &mut decrypted_challenge_uid)
+                    .map_err(|_| AuthError::DecryptionError)
+                    // Get the verifiers for the user's challenge CSRF and PKCE
+                    .and_then(|_| {
+                        self.session_challenges
+                            .remove(&Hash::from(
+                                <Vec<u8> as TryInto<[u8; 32]>>::try_into(decrypted_challenge_uid)
+                                    .map_err(|_| AuthError::DecryptionError)?,
+                            ))
+                            .ok_or(AuthError::SessionNonexistent)
+                    }),
+            )
+            // Swap the auth token for an access token
+            .and_then(|challenge_verifiers| {
+                msg.client
+                    .exchange_code(msg.authorization_code)
+                    .set_pkce_verifier(challenge_verifiers.pkce_code_verifier)
+                    .request_async(async_http_client)
+                    .map_err(|e| AuthError::OauthError(e.to_string()))
+            })
+        // Use the access token to get the user's EMAIL HHHEEEHHEE
+        .and_then(|access_token| {
+            // TODO: NOW USE THE ACCESS TOKEN TO GET THE USER'S EMAIL AND GENERATE A JWT THAT'S IT
+            // YOU DON'T NEED TO CHECK THE DOMAIN BC THAT HAPPENS ALREADY WITH THE JWT VALID
+            // ATTESTATION
+            reqwest::get("")
+        })
+        )
+    }
 }
 
 impl<'a> Handler<AssertJwtValid<'a>> for Authenticator {

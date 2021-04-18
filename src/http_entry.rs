@@ -13,7 +13,7 @@ use actix_web_actors::ws;
 use oauth2::{basic::BasicClient, CsrfToken, PkceCodeChallenge, Scope};
 use std::{sync::Arc, path::PathBuf};
 
-
+/// Establishes a websockets connection to the server
 pub async fn ws_index(req: HttpRequest,
     hub: web::Data<Addr<Hub>>,
     auth: web::Data<Addr<Authenticator>>,
@@ -67,7 +67,7 @@ pub async fn ui_index(
 
         return Ok(HttpResponse::TemporaryRedirect()
             .set_header("Location", auth_url.as_str())
-            // Save the unique identifier for the user's challenge as a session cookie
+            // Save the encrypted unique identifier for the user's challenge as a session cookie
             .cookie(Cookie::new(HTTP_CHALLENGE_COOKIE_NAME, base64::encode(challenge_session)))
             .finish());
     }
