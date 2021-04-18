@@ -10,7 +10,7 @@ use blake3::Hash;
 use ed25519_dalek::{Keypair, Signature};
 use futures::{future, FutureExt, TryFutureExt};
 use oauth2::{
-    basic::BasicClient, reqwest::{async_http_client, self}, AsyncCodeTokenRequest, AuthorizationCode,
+    basic::BasicClient, reqwest::async_http_client, AsyncCodeTokenRequest, AuthorizationCode,
     CsrfToken, PkceCodeVerifier,
 };
 use rand::Rng;
@@ -278,6 +278,17 @@ impl<'a> Handler<ExecuteChallenge<'a>> for Authenticator {
         // The user will provide an ENCRYPTED UID linking to their CSRF and PKCE validators
         let mut decrypted_challenge_uid = msg.uid_cookie.to_string().into_bytes();
 
+        /// An email belonging to a user
+        #[derive(Deserialize)]
+        struct Entry {
+            value: String,
+        }
+
+        #[derive(Deserialize)]
+        struct PeopleApiResponse {
+            emailAddresses: Vec<Entry>,
+        }
+
         Box::pin(
             future::ready(
                 self.cookie_enc_keypair
@@ -302,13 +313,23 @@ impl<'a> Handler<ExecuteChallenge<'a>> for Authenticator {
                     .request_async(async_http_client)
                     .map_err(|e| AuthError::OauthError(e.to_string()))
             })
-        // Use the access token to get the user's EMAIL HHHEEEHHEE
-        .and_then(|access_token| {
-            // TODO: NOW USE THE ACCESS TOKEN TO GET THE USER'S EMAIL AND GENERATE A JWT THAT'S IT
-            // YOU DON'T NEED TO CHECK THE DOMAIN BC THAT HAPPENS ALREADY WITH THE JWT VALID
-            // ATTESTATION
-            reqwest::get("")
-        })
+            // Use the access token to get the user's EMAIL HHHEEEHHEE
+            .and_then(|access_token| {
+                // TODO: NOW USE THE ACCESS TOKEN TO GET THE USER'S EMAIL AND GENERATE A JWT THAT'S IT
+                // YOU DON'T NEED TO CHECK THE DOMAIN BC THAT HAPPENS ALREADY WITH THE JWT VALID
+                // ATTESTATION
+                reqwest::get(
+                    "https://people.googleapis.com/v1/people/me?personFields=emailAddresses",
+                )
+                .map_err(|e| AuthError::OauthError(e.to_string()))
+            })
+            // Parse the google people API response
+            .and_then(|gapi_response| {
+                gapi_response
+                    .json::<PeopleApiResponse>()
+                    .map_err(|e| AuthError::OauthError(e.to_string()))
+            })
+            .and_then(|authenticated_person| authenticated_person.emailAddresses.iter().find(|email| email.ends_with("@stu.socsd.org"))),
         )
     }
 }
