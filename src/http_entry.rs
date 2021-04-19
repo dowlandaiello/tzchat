@@ -48,7 +48,7 @@ pub async fn ws_index(
 #[derive(Deserialize)]
 pub struct OauthCallbackArgs {
     state: String,
-    auth_code: String,
+    code: String,
 }
 
 /// Handle Google's redirect containing final oauth details.
@@ -64,16 +64,16 @@ pub async fn oauth_callback(
         .ok_or(AuthError::SessionNonexistent)?;
 
     match oauth_args {
-        OauthCallbackArgs { state, auth_code } => {
+        OauthCallbackArgs { state, code } => {
             let challenge = ExecuteChallenge {
                 uid_cookie,
                 csrf_token: CsrfToken::new(state),
-                authorization_code: AuthorizationCode::new(auth_code),
+                authorization_code: AuthorizationCode::new(code),
                 client: (**client).clone(),
             };
 
             // Let the authenticator exchange the code and validate the user's identity. We will now have
-            // an encrypted base64 JWT to save in a cookie
+            // a base64 JWT to save in a cookie
             let jwt = auth
                 .send(challenge)
                 .await
@@ -121,9 +121,11 @@ pub async fn ui_index(
             .await
             .map_err(|e| error::ErrorInternalServerError(e))??;
 
+        println!("{:?}", challenge_session);
+
         return Ok(HttpResponse::TemporaryRedirect()
             .set_header("Location", auth_url.as_str())
-            // Save the encrypted unique identifier for the user's challenge as a session cookie
+            // Save the unique identifier for the user's challenge as a session cookie
             .cookie(Cookie::new(
                 HTTP_CHALLENGE_COOKIE_NAME,
                 base64::encode(challenge_session),

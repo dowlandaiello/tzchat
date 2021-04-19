@@ -8,16 +8,12 @@ use actix_web::{
 };
 use blake3::Hash;
 use ed25519_dalek::{Keypair, Signature, Signer};
-use futures::TryFutureExt;
+use futures::{future, TryFutureExt};
 use oauth2::{
     basic::BasicClient, reqwest::async_http_client, AsyncCodeTokenRequest, AuthorizationCode,
     CsrfToken, PkceCodeVerifier, TokenResponse,
 };
 use rand::Rng;
-use ring::{
-    aead::{Aad, BoundKey, Nonce, NonceSequence, OpeningKey, SealingKey, UnboundKey, AES_256_GCM},
-    error::Unspecified,
-};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -25,7 +21,7 @@ use std::{
     default::Default,
     error::Error,
     fmt,
-    sync::{Arc, RwLock},
+    sync::Arc,
 };
 
 /// Two types of sessions exist: ones used for challenges, which are destroyed in a very short
@@ -40,7 +36,7 @@ pub const HTTP_CHALLENGE_COOKIE_NAME: &str = "oauth_session";
 #[derive(Message)]
 #[rtype(result = "Result<String, AuthError>")]
 pub struct ExecuteChallenge {
-    /// The encrypted UID linking the user to their challenge validators
+    /// The UID linking the user to their challenge validators
     pub uid_cookie: Cookie<'static>,
 
     /// The `state` variable returned by Google. Should match our records
@@ -78,11 +74,11 @@ pub struct AssumeIdentity {
     pub email: String,
 }
 
-/// Acquires an encrypted unique identifier for a session with the provided auth challenge belongig
+/// Acquires a unique identifier for a session with the provided auth challenge belongig
 /// to it. Encrypted UID should be saved client-side to allow access after client consents.
 #[derive(Message)]
 #[rtype(result = "Result<Vec<u8>, AuthError>")]
-pub struct RegisterSessionChallenge(pub OauthSessionChallenge);
+pub struct RegisterSessionChallenge (pub OauthSessionChallenge);
 
 /// Acquires a semi-permanent, exclusive lock on the username for the user with the given session.
 /// The alias shall persist, after the session is closed, but not after the server closes.
@@ -189,36 +185,13 @@ pub struct Authenticator {
     claimant_keypair: Arc<Keypair>,
 
     // The random number generator used by the authenticator
-    _rng: rand::rngs::ThreadRng,
+    rng: rand::rngs::ThreadRng,
 
     // PKCE challenges issued to users, identified by unique UIDs issued to users
     session_challenges: HashMap<Hash, OauthSessionChallenge>,
 
-    // The key used to encrypt cookie / session variables
-    cookie_enc_keypair: (
-        Arc<RwLock<SealingKey<AuthenticatorUidGen>>>,
-        OpeningKey<AuthenticatorUidGen>,
-    ),
-
-    // The nonce generator used for making keypairs and identifying users
-    nonce_gen: AuthenticatorUidGen,
-
     // The http client used for interfacing with google oauth APIs
     http_client: Arc<reqwest::Client>,
-}
-
-/// Generates a unique nonce, or UID for a user. Used for encrypting user details and uniquely
-/// identifying users. The same nonce should never be used more than once, hence the name.
-#[derive(Default)]
-pub struct AuthenticatorUidGen {
-    // The random number generator used to generate nonces from the seed (index)
-    rng: rand::rngs::ThreadRng,
-}
-
-impl NonceSequence for AuthenticatorUidGen {
-    fn advance(&mut self) -> Result<Nonce, Unspecified> {
-        Ok(Nonce::assume_unique_for_key(self.rng.gen()))
-    }
 }
 
 /// Oauth sessions must have certain details persisted server-side that are used to ensure that a
@@ -235,30 +208,12 @@ impl Default for Authenticator {
     fn default() -> Self {
         let mut rng = rand::thread_rng();
 
-        // Generate an initial nonce for the opening and sealing keys
-        let key_seed: [u8; 32] = rng.gen();
-
         Self {
             user_aliases: Default::default(),
             claimed_usernames: Default::default(),
             sessions: Default::default(),
             claimant_keypair: Arc::new(Keypair::generate(&mut rng)),
-            cookie_enc_keypair: (
-                Arc::new(RwLock::new(SealingKey::new(
-                    // NOTE: This shouldn't ever fail, but if it does, that's fine, because it will
-                    // only fail ONCE, at the very start. Panicking here is completely acceptable.
-                    UnboundKey::new(&AES_256_GCM, key_seed.as_ref())
-                        .expect("failed to obtain a sealing key"),
-                    AuthenticatorUidGen::default(),
-                ))),
-                OpeningKey::new(
-                    UnboundKey::new(&AES_256_GCM, key_seed.as_ref())
-                        .expect("failed to obtain an opening key"),
-                    AuthenticatorUidGen::default(),
-                ),
-            ),
-            nonce_gen: AuthenticatorUidGen::default(),
-            _rng: rng,
+            rng,
             session_challenges: HashMap::new(),
             http_client: Arc::new(reqwest::Client::new()),
         }
@@ -273,8 +228,18 @@ impl Handler<ExecuteChallenge> for Authenticator {
     type Result = ResponseFuture<Result<String, AuthError>>;
 
     fn handle(&mut self, msg: ExecuteChallenge, _ctx: &mut Self::Context) -> Self::Result {
-        // The user will provide an ENCRYPTED UID linking to their CSRF and PKCE validators
-        let mut decrypted_challenge_uid = msg.uid_cookie.to_string().into_bytes();
+        // The user will provide an UNENCRYPTED UID linking to their CSRF and PKCE validators
+        let decrypted_challenge_uid =
+            if let Some(b64_challenge_uid) = msg.uid_cookie.to_string().split("=").nth(1) {
+                if let Ok(challenge_uid) = base64::decode(b64_challenge_uid) {
+                    challenge_uid
+                } else {
+                    return Box::pin(future::ready(Err(AuthError::DecryptionError)));
+                }
+            } else {
+                return Box::pin(future::ready(Err(AuthError::InvalidToken)));
+            };
+
         let http_client = self.http_client.clone();
 
         /// An email belonging to a user
@@ -288,21 +253,16 @@ impl Handler<ExecuteChallenge> for Authenticator {
             email_addresses: Vec<Entry>,
         }
 
-        let challenge_verifiers = (&mut self.cookie_enc_keypair.1)
-            .open_in_place(Aad::empty(), &mut decrypted_challenge_uid)
+        // Get the verifiers for the user's challenge CSRF and PKCE
+        let challenge_verifiers = <&[u8] as TryInto<[u8; 32]>>::try_into(&decrypted_challenge_uid)
             .map_err(|_| AuthError::DecryptionError)
-            // Get the verifiers for the user's challenge CSRF and PKCE
-            .and_then(|dec_challenge_uid| {
-                <&[u8] as TryInto<[u8; 32]>>::try_into(dec_challenge_uid)
-                    .map_err(|_| AuthError::DecryptionError)
-                    .and_then(|challenge_uid| {
-                        self.session_challenges
-                            .remove(&Hash::from(challenge_uid))
-                            .ok_or(AuthError::SessionNonexistent)
-                    })
+            .and_then(|challenge_uid| {
+                self.session_challenges
+                    .remove(&Hash::from(challenge_uid))
+                    .ok_or(AuthError::SessionNonexistent)
             });
+
         let jwt_signer = self.claimant_keypair.clone();
-        let jwt_enc_key = self.cookie_enc_keypair.0.clone();
 
         Box::pin(async move {
             let verifiers = challenge_verifiers?;
@@ -341,19 +301,14 @@ impl Handler<ExecuteChallenge> for Authenticator {
                 .find(|email| email.ends_with("@stu.socsd.org"))
                 .ok_or(AuthError::NotStudent)?;
 
-            // Generate and encrypt a JWT from the email
-            let mut jwt = bincode::serialize(&IdentityAttestation {
+            // Generate a JWT from the email
+            let jwt = bincode::serialize(&IdentityAttestation {
                 sig: jwt_signer.sign(email.as_bytes()),
                 email,
             })
             .map_err(|e| AuthError::SerializationError(e.to_string()))?;
 
-            jwt_enc_key
-                .write()
-                .map_err(|e| AuthError::OauthError(e.to_string()))?
-                .seal_in_place_append_tag(Aad::empty(), &mut jwt)
-                .map_err(|_| AuthError::EncryptionError)
-                .map(|_| base64::encode(jwt))
+            Ok(base64::encode(jwt))
         })
     }
 }
@@ -366,15 +321,11 @@ impl<'a> Handler<AssertJwtValid<'a>> for Authenticator {
         msg: AssertJwtValid,
         _ctx: &mut Self::Context,
     ) -> Result<String, AuthError> {
-        let mut unencrypted_jwt = msg.0.to_string().into_bytes();
-        self.cookie_enc_keypair
-            .1
-            .open_in_place(Aad::empty(), &mut unencrypted_jwt)
-            .map_err(|_| AuthError::DecryptionError)?;
+        let jwt = msg.0.to_string().into_bytes();
 
         // JWT's are stored as serde/bincode-encoded bytes on the client's end. Deserialize and
         // verify it. Then, move out the email.
-        let jwt: IdentityAttestation = bincode::deserialize(&unencrypted_jwt)
+        let jwt: IdentityAttestation = bincode::deserialize(&jwt)
             .map_err(|e| AuthError::SerializationError(e.to_string()))?;
 
         // Only students in the student domain of SOCSD can log in
@@ -408,26 +359,16 @@ impl Handler<RegisterSessionChallenge> for Authenticator {
         msg: RegisterSessionChallenge,
         _ctx: &mut Self::Context,
     ) -> Result<Vec<u8>, AuthError> {
-        // Generate a unique identifier for the user
-        let nonce = self
-            .nonce_gen
-            .advance()
-            .map_err(|_| AuthError::EncryptionError)?;
-        let uid = blake3::hash(nonce.as_ref());
+        let uid = blake3::hash(self.rng.gen::<[u8; 32]>().as_ref());
 
         // Persist the challenge
-        self.session_challenges.insert(uid, msg.0);
+        self.session_challenges.insert(
+            uid,
+            msg.0
+        );
 
-        // Encrypt the user's session token. The original UID must be cloned, since we need to
-        // encrypt and own it
-        let mut client_ver = uid.as_bytes().to_vec();
-        self.cookie_enc_keypair
-            .0
-            .write()
-            .map_err(|e| AuthError::OauthError(e.to_string()))?
-            .seal_in_place_append_tag(Aad::empty(), &mut client_ver)
-            .map(|_| client_ver)
-            .map_err(|_| AuthError::EncryptionError)
+        // Give the user their unique session ID
+        Ok(uid.as_bytes().to_vec())
     }
 }
 
