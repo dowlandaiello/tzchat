@@ -12,6 +12,7 @@ use futures::{future, FutureExt, TryFutureExt};
 use oauth2::{
     basic::BasicClient, reqwest::async_http_client, AsyncCodeTokenRequest, AuthorizationCode,
     CsrfToken, PkceCodeVerifier,
+    TokenResponse,
 };
 use rand::Rng;
 use ring::{
@@ -39,9 +40,9 @@ pub const HTTP_CHALLENGE_COOKIE_NAME: &str = "oauth_session";
 /// longer-term JWT session token for WS communication.
 #[derive(Message)]
 #[rtype(result = "Result<String, AuthError>")]
-pub struct ExecuteChallenge<'a> {
+pub struct ExecuteChallenge {
     /// The encrypted UID linking the user to their challenge validators
-    pub uid_cookie: Cookie<'a>,
+    pub uid_cookie: Cookie<'static>,
 
     /// The `state` variable returned by Google. Should match our records
     pub csrf_token: CsrfToken,
@@ -50,7 +51,7 @@ pub struct ExecuteChallenge<'a> {
     pub authorization_code: AuthorizationCode,
 
     /// The oauth client to use for acquiring user details
-    pub client: &'a BasicClient,
+    pub client: Arc<BasicClient>,
 }
 
 /// Returns an error if the given JWT is not valid. Returns the enclosed email if valid.
@@ -146,7 +147,7 @@ impl ResponseError for AuthError {
             Self::PermissionDenied | Self::NotStudent => StatusCode::FORBIDDEN,
             Self::IllegalAlias | Self::InvalidToken => StatusCode::BAD_REQUEST,
             Self::DecryptionError | Self::EncryptionError => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::SerializationError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::SerializationError(_) | Self::OauthError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -163,6 +164,7 @@ impl fmt::Display for AuthError {
             Self::DecryptionError => write!(f, "failed to decrypt message"),
             Self::EncryptionError => write!(f, "failed to encrypt message"),
             Self::SerializationError(e) => write!(f, "failed to serialize message: {}", e),
+            Self::OauthError(e) => write!(f, "encountered an error while authenticating: {}", e),
         }
     }
 }
@@ -201,6 +203,9 @@ pub struct Authenticator {
 
     // The nonce generator used for making keypairs and identifying users
     nonce_gen: AuthenticatorUidGen,
+
+    // The http client used for interfacing with google oauth APIs
+    http_client: Arc<reqwest::Client>,
 }
 
 /// Generates a unique nonce, or UID for a user. Used for encrypting user details and uniquely
@@ -256,27 +261,22 @@ impl Default for Authenticator {
             nonce_gen: AuthenticatorUidGen::default(),
             rng,
             session_challenges: HashMap::new(),
+            http_client: Arc::new(reqwest::Client::new()),
         }
     }
 }
-
-/*
- * TODO - for tomorrow:
- * [*] Add a new message type to decrypt and validate session cookies
- * [] Check for session cookie denoting already logged in on http_entry /index.html call
- * [] Send new session cookie method and await response
- */
 
 impl Actor for Authenticator {
     type Context = Context<Self>;
 }
 
-impl<'a> Handler<ExecuteChallenge<'a>> for Authenticator {
+impl Handler<ExecuteChallenge> for Authenticator {
     type Result = ResponseFuture<Result<String, AuthError>>;
 
-    fn handle(&mut self, msg: ExecuteChallenge, ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, msg: ExecuteChallenge, _ctx: &mut Self::Context) -> Self::Result {
         // The user will provide an ENCRYPTED UID linking to their CSRF and PKCE validators
         let mut decrypted_challenge_uid = msg.uid_cookie.to_string().into_bytes();
+        let http_client = self.http_client.clone();
 
         /// An email belonging to a user
         #[derive(Deserialize)]
@@ -296,10 +296,10 @@ impl<'a> Handler<ExecuteChallenge<'a>> for Authenticator {
                     .open_in_place(Aad::empty(), &mut decrypted_challenge_uid)
                     .map_err(|_| AuthError::DecryptionError)
                     // Get the verifiers for the user's challenge CSRF and PKCE
-                    .and_then(|_| {
+                    .and_then(|decrypted_challenge_uid| {
                         self.session_challenges
                             .remove(&Hash::from(
-                                <Vec<u8> as TryInto<[u8; 32]>>::try_into(decrypted_challenge_uid)
+                                <&[u8] as TryInto<[u8; 32]>>::try_into(decrypted_challenge_uid)
                                     .map_err(|_| AuthError::DecryptionError)?,
                             ))
                             .ok_or(AuthError::SessionNonexistent)
@@ -314,13 +314,15 @@ impl<'a> Handler<ExecuteChallenge<'a>> for Authenticator {
                     .map_err(|e| AuthError::OauthError(e.to_string()))
             })
             // Use the access token to get the user's EMAIL HHHEEEHHEE
-            .and_then(|access_token| {
+            .and_then(move |access_token| {
                 // TODO: NOW USE THE ACCESS TOKEN TO GET THE USER'S EMAIL AND GENERATE A JWT THAT'S IT
                 // YOU DON'T NEED TO CHECK THE DOMAIN BC THAT HAPPENS ALREADY WITH THE JWT VALID
                 // ATTESTATION
-                reqwest::get(
+                http_client.get(
                     "https://people.googleapis.com/v1/people/me?personFields=emailAddresses",
                 )
+                .bearer_auth(access_token.access_token().secret())
+                .send()
                 .map_err(|e| AuthError::OauthError(e.to_string()))
             })
             // Parse the google people API response
@@ -329,7 +331,18 @@ impl<'a> Handler<ExecuteChallenge<'a>> for Authenticator {
                     .json::<PeopleApiResponse>()
                     .map_err(|e| AuthError::OauthError(e.to_string()))
             })
-            .and_then(|authenticated_person| authenticated_person.emailAddresses.iter().find(|email| email.ends_with("@stu.socsd.org"))),
+            .map(|res| {
+                res.and_then(|authenticated_person: PeopleApiResponse| {
+                    // TODO: DON'T JUST RETURN THE FUCKING EMAIL HERE. ACTUALLY MAKE AND ENCRYPT A
+                    // JWT TO RETURN
+                    authenticated_person
+                        .emailAddresses
+                        .into_iter()
+                        .map(|entry: Entry| entry.value)
+                        .find(|email| email.ends_with("@stu.socsd.org"))
+                        .ok_or(AuthError::NotStudent)
+                })
+            }),
         )
     }
 }
