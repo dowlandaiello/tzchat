@@ -82,7 +82,14 @@ pub async fn oauth_callback(
             // Send the user to the homepage and save the JWT as a cookie
             Ok(HttpResponse::TemporaryRedirect()
                 .set_header("Location", "/index.html")
-                .cookie(Cookie::new(HTTP_JWT_COOKIE_NAME, jwt))
+                .cookie(
+                    Cookie::build(HTTP_JWT_COOKIE_NAME, jwt)
+                        .path("/")
+                        .secure(true)
+                        .domain("tzhs.chat")
+                        .domain("localhost")
+                        .finish(),
+                )
                 .finish())
         }
     }
@@ -106,6 +113,9 @@ pub async fn ui_index(
             .authorize_url(CsrfToken::new_random)
             // tzhs.chat only needs one scope, the email scope, to function
             .add_scope(Scope::new(
+                "https://www.googleapis.com/auth/userinfo.profile".to_owned(),
+            ))
+            .add_scope(Scope::new(
                 "https://www.googleapis.com/auth/userinfo.email".to_owned(),
             ))
             .set_pkce_challenge(pkce_challenge)
@@ -121,15 +131,20 @@ pub async fn ui_index(
             .await
             .map_err(|e| error::ErrorInternalServerError(e))??;
 
-        println!("{:?}", challenge_session);
-
         return Ok(HttpResponse::TemporaryRedirect()
             .set_header("Location", auth_url.as_str())
             // Save the unique identifier for the user's challenge as a session cookie
-            .cookie(Cookie::new(
-                HTTP_CHALLENGE_COOKIE_NAME,
-                base64::encode(challenge_session),
-            ))
+            .cookie(
+                Cookie::build(
+                    HTTP_CHALLENGE_COOKIE_NAME,
+                    base64::encode(challenge_session),
+                )
+                .path("/")
+                .secure(true)
+                .domain("tzhs.chat")
+                .domain("localhost")
+                .finish(),
+            )
             .finish());
     }
 

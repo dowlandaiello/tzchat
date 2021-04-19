@@ -6,6 +6,7 @@ use actix_web::{
     http::{header, Cookie, StatusCode},
     HttpResponse,
 };
+use awc::Client;
 use blake3::Hash;
 use ed25519_dalek::{Keypair, Signature, Signer};
 use futures::{future, TryFutureExt};
@@ -78,7 +79,7 @@ pub struct AssumeIdentity {
 /// to it. Encrypted UID should be saved client-side to allow access after client consents.
 #[derive(Message)]
 #[rtype(result = "Result<Vec<u8>, AuthError>")]
-pub struct RegisterSessionChallenge (pub OauthSessionChallenge);
+pub struct RegisterSessionChallenge(pub OauthSessionChallenge);
 
 /// Acquires a semi-permanent, exclusive lock on the username for the user with the given session.
 /// The alias shall persist, after the session is closed, but not after the server closes.
@@ -191,7 +192,7 @@ pub struct Authenticator {
     session_challenges: HashMap<Hash, OauthSessionChallenge>,
 
     // The http client used for interfacing with google oauth APIs
-    http_client: Arc<reqwest::Client>,
+    http_client: Arc<Client>,
 }
 
 /// Oauth sessions must have certain details persisted server-side that are used to ensure that a
@@ -215,7 +216,7 @@ impl Default for Authenticator {
             claimant_keypair: Arc::new(Keypair::generate(&mut rng)),
             rng,
             session_challenges: HashMap::new(),
-            http_client: Arc::new(reqwest::Client::new()),
+            http_client: Arc::new(Client::default()),
         }
     }
 }
@@ -250,6 +251,7 @@ impl Handler<ExecuteChallenge> for Authenticator {
 
         #[derive(Deserialize)]
         struct PeopleApiResponse {
+            #[serde(alias = "emailAddresses")]
             email_addresses: Vec<Entry>,
         }
 
@@ -283,9 +285,10 @@ impl Handler<ExecuteChallenge> for Authenticator {
                 .await?;
 
             // Use the access token to get the user's EMAIL HHHEEEHHEE
-            let gapi_response = http_client
+            let mut gapi_response = http_client
                 .get("https://people.googleapis.com/v1/people/me?personFields=emailAddresses")
                 .bearer_auth(access_token)
+                .header("Accept", "application/json")
                 .send()
                 .map_err(|e| AuthError::OauthError(e.to_string()))
                 .await?;
@@ -321,12 +324,14 @@ impl<'a> Handler<AssertJwtValid<'a>> for Authenticator {
         msg: AssertJwtValid,
         _ctx: &mut Self::Context,
     ) -> Result<String, AuthError> {
-        let jwt = msg.0.to_string().into_bytes();
+        // The JWT is encoded in base64. Decode it
+        let jwt = base64::decode(msg.0.to_string())
+            .map_err(|e| AuthError::SerializationError(e.to_string()))?;
 
         // JWT's are stored as serde/bincode-encoded bytes on the client's end. Deserialize and
         // verify it. Then, move out the email.
-        let jwt: IdentityAttestation = bincode::deserialize(&jwt)
-            .map_err(|e| AuthError::SerializationError(e.to_string()))?;
+        let jwt: IdentityAttestation =
+            bincode::deserialize(&jwt).map_err(|e| AuthError::SerializationError(e.to_string()))?;
 
         // Only students in the student domain of SOCSD can log in
         if !jwt.email.ends_with("@stu.socsd.org") {
@@ -362,10 +367,7 @@ impl Handler<RegisterSessionChallenge> for Authenticator {
         let uid = blake3::hash(self.rng.gen::<[u8; 32]>().as_ref());
 
         // Persist the challenge
-        self.session_challenges.insert(
-            uid,
-            msg.0
-        );
+        self.session_challenges.insert(uid, msg.0);
 
         // Give the user their unique session ID
         Ok(uid.as_bytes().to_vec())
