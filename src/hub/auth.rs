@@ -7,12 +7,11 @@ use actix_web::{
     HttpResponse,
 };
 use blake3::Hash;
-use ed25519_dalek::{Keypair, Signature};
+use ed25519_dalek::{Keypair, Signature, Signer};
 use futures::{future, FutureExt, TryFutureExt};
 use oauth2::{
     basic::BasicClient, reqwest::async_http_client, AsyncCodeTokenRequest, AuthorizationCode,
-    CsrfToken, PkceCodeVerifier,
-    TokenResponse,
+    CsrfToken, PkceCodeVerifier, TokenResponse,
 };
 use rand::Rng;
 use ring::{
@@ -187,7 +186,7 @@ pub struct Authenticator {
     // The keypair used by the authenticator to sign claims relating to use identity claims. This
     // bypasses the need for repetitive calls to google cloud, requiring only one call per user per
     // device.
-    claimant_keypair: Keypair,
+    claimant_keypair: Arc<Keypair>,
 
     // The random number generator used by the authenticator
     rng: rand::rngs::ThreadRng,
@@ -243,7 +242,7 @@ impl Default for Authenticator {
             user_aliases: Default::default(),
             claimed_usernames: Default::default(),
             sessions: Default::default(),
-            claimant_keypair: Keypair::generate(&mut rng),
+            claimant_keypair: Arc::new(Keypair::generate(&mut rng)),
             cookie_enc_keypair: (
                 SealingKey::new(
                     // NOTE: This shouldn't ever fail, but if it does, that's fine, because it will
@@ -286,64 +285,71 @@ impl Handler<ExecuteChallenge> for Authenticator {
 
         #[derive(Deserialize)]
         struct PeopleApiResponse {
-            emailAddresses: Vec<Entry>,
+            email_addresses: Vec<Entry>,
         }
 
-        Box::pin(
-            future::ready(
-                self.cookie_enc_keypair
-                    .1
-                    .open_in_place(Aad::empty(), &mut decrypted_challenge_uid)
+        let cookie_enc_keypair = &mut self.cookie_enc_keypair;
+        let challenge_verifiers = cookie_enc_keypair
+            .1
+            .open_in_place(Aad::empty(), &mut decrypted_challenge_uid)
+            .map_err(|_| AuthError::DecryptionError)
+            // Get the verifiers for the user's challenge CSRF and PKCE
+            .and_then(|decrypted_challenge_uid| {
+                <&[u8] as TryInto<[u8; 32]>>::try_into(decrypted_challenge_uid)
                     .map_err(|_| AuthError::DecryptionError)
-                    // Get the verifiers for the user's challenge CSRF and PKCE
-                    .and_then(|decrypted_challenge_uid| {
+                    .and_then(|challenge_uid| {
                         self.session_challenges
-                            .remove(&Hash::from(
-                                <&[u8] as TryInto<[u8; 32]>>::try_into(decrypted_challenge_uid)
-                                    .map_err(|_| AuthError::DecryptionError)?,
-                            ))
+                            .remove(&Hash::from(challenge_uid))
                             .ok_or(AuthError::SessionNonexistent)
-                    }),
-            )
+                    })
+            });
+        let jwt_signer = self.claimant_keypair.clone();
+
+        Box::pin(async move {
+            let verifiers = challenge_verifiers?;
+
+            // Validate the oauth state
+            (verifiers.csrf_token.secret() == msg.csrf_token.secret())
+                .then(|| ())
+                .ok_or(AuthError::InvalidToken)?;
+
             // Swap the auth token for an access token
-            .and_then(|challenge_verifiers| {
-                msg.client
-                    .exchange_code(msg.authorization_code)
-                    .set_pkce_verifier(challenge_verifiers.pkce_code_verifier)
-                    .request_async(async_http_client)
-                    .map_err(|e| AuthError::OauthError(e.to_string()))
-            })
+            let access_token = msg
+                .client
+                .exchange_code(msg.authorization_code)
+                .set_pkce_verifier(verifiers.pkce_code_verifier)
+                .request_async(async_http_client)
+                .map_err(|e| AuthError::OauthError(e.to_string()))
+                .map_ok(|token| <String as Clone>::clone(token.access_token().secret()))
+                .await?;
+
             // Use the access token to get the user's EMAIL HHHEEEHHEE
-            .and_then(move |access_token| {
-                // TODO: NOW USE THE ACCESS TOKEN TO GET THE USER'S EMAIL AND GENERATE A JWT THAT'S IT
-                // YOU DON'T NEED TO CHECK THE DOMAIN BC THAT HAPPENS ALREADY WITH THE JWT VALID
-                // ATTESTATION
-                http_client.get(
-                    "https://people.googleapis.com/v1/people/me?personFields=emailAddresses",
-                )
-                .bearer_auth(access_token.access_token().secret())
+            let gapi_response = http_client
+                .get("https://people.googleapis.com/v1/people/me?personFields=emailAddresses")
+                .bearer_auth(access_token)
                 .send()
                 .map_err(|e| AuthError::OauthError(e.to_string()))
-            })
+                .await?;
             // Parse the google people API response
-            .and_then(|gapi_response| {
-                gapi_response
-                    .json::<PeopleApiResponse>()
-                    .map_err(|e| AuthError::OauthError(e.to_string()))
+            let res = gapi_response
+                .json::<PeopleApiResponse>()
+                .map_err(|e| AuthError::OauthError(e.to_string()))
+                .await?;
+
+            let email = res
+                .email_addresses
+                .into_iter()
+                .map(|entry: Entry| entry.value)
+                .find(|email| email.ends_with("@stu.socsd.org"))
+                .ok_or(AuthError::NotStudent)?;
+            // Generate a JWT form the email
+            bincode::serialize(&IdentityAttestation {
+                sig: jwt_signer.sign(email.as_bytes()),
+                email,
             })
-            .map(|res| {
-                res.and_then(|authenticated_person: PeopleApiResponse| {
-                    // TODO: DON'T JUST RETURN THE FUCKING EMAIL HERE. ACTUALLY MAKE AND ENCRYPT A
-                    // JWT TO RETURN
-                    authenticated_person
-                        .emailAddresses
-                        .into_iter()
-                        .map(|entry: Entry| entry.value)
-                        .find(|email| email.ends_with("@stu.socsd.org"))
-                        .ok_or(AuthError::NotStudent)
-                })
-            }),
-        )
+            .map_err(|e| AuthError::SerializationError(e.to_string()))
+            .map(|jwt| base64::encode(jwt))
+        })
     }
 }
 
