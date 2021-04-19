@@ -1,15 +1,13 @@
 use super::msg::{Msg, NotifyTxt, PubMsg, StoreMsg};
 use actix::{
-    Actor, ActorFuture, Addr, AsyncContext, Context, ContextFutureSpawner, Handler, MailboxError,
-    prelude::SendError,
-    Recipient, WrapFuture,
+    prelude::SendError, Actor, ActorFuture, Addr, AsyncContext, Context, ContextFutureSpawner,
+    Handler, MailboxError, Recipient, WrapFuture,
 };
 use std::{collections::HashSet, error::Error, fmt, sync::Arc};
 use tokio::time::Duration;
 
 /// The default rooms spawned at program start.
-pub const DEFAULT_ROOMS: [&str; 5] =
-    ["general", "freshmen", "sophomores", "juniors", "seniors"];
+pub const DEFAULT_ROOMS: [&str; 5] = ["general", "freshmen", "sophomores", "juniors", "seniors"];
 
 /// Represents some extraneous condition causing a room to function incorrectly.
 #[derive(Debug)]
@@ -80,7 +78,7 @@ impl Handler<PubMsg> for Room {
                                     SendError::Closed(_) => {
                                         info!("dropping closed client #{}", act.clients.len());
                                         removables.push(client.clone());
-                                    },
+                                    }
                                     _ => error!("error while broadcasting MSG: {}", e),
                                 }
                             }

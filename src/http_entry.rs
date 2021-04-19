@@ -1,27 +1,39 @@
 use super::hub::{
     auth::{
-        AssertJwtValid, AssumeIdentity, Authenticator, OauthSessionChallenge,
-        AuthError,
-        RegisterSessionChallenge, HTTP_CHALLENGE_COOKIE_NAME, HTTP_JWT_COOKIE_NAME,
+        AssertJwtValid, AssumeIdentity, AuthError, Authenticator, ExecuteChallenge,
+        OauthSessionChallenge, RegisterSessionChallenge, HTTP_CHALLENGE_COOKIE_NAME,
+        HTTP_JWT_COOKIE_NAME,
     },
     Hub, WsSocket,
 };
 use actix::Addr;
 use actix_files::NamedFile;
-use actix_web::{error, http::Cookie, web, Error, HttpMessage, HttpRequest, HttpResponse};
+use actix_web::{
+    error,
+    http::Cookie,
+    web::{self, Query},
+    Error, HttpMessage, HttpRequest, HttpResponse,
+};
 use actix_web_actors::ws;
-use oauth2::{basic::BasicClient, CsrfToken, PkceCodeChallenge, Scope};
-use std::{sync::Arc, path::PathBuf};
+use oauth2::{basic::BasicClient, AuthorizationCode, CsrfToken, PkceCodeChallenge, Scope};
+use serde::Deserialize;
+use std::{path::PathBuf, sync::Arc};
 
 /// Establishes a websockets connection to the server
-pub async fn ws_index(req: HttpRequest,
+pub async fn ws_index(
+    req: HttpRequest,
     hub: web::Data<Addr<Hub>>,
     auth: web::Data<Addr<Authenticator>>,
     stream: web::Payload,
 ) -> Result<HttpResponse, Error> {
     // Ensure both that the JWT session exists and that it is valid
-    let jwt_cookie = req.cookie(HTTP_JWT_COOKIE_NAME).ok_or(AuthError::InvalidToken)?;
-    let email = auth.send(AssertJwtValid(jwt_cookie)).await.map_err(|e| error::ErrorInternalServerError(e))??;
+    let jwt_cookie = req
+        .cookie(HTTP_JWT_COOKIE_NAME)
+        .ok_or(AuthError::InvalidToken)?;
+    let email = auth
+        .send(AssertJwtValid(jwt_cookie))
+        .await
+        .map_err(|e| error::ErrorInternalServerError(e))??;
 
     // Start the websocket chat
     let (session, resp) = ws::start_with_addr(WsSocket::new((**hub).to_owned()), &req, stream)?;
@@ -30,6 +42,50 @@ pub async fn ws_index(req: HttpRequest,
     auth.do_send(AssumeIdentity { session, email });
 
     Ok(resp)
+}
+
+/// The state and token returned by Google
+#[derive(Deserialize)]
+pub struct OauthCallbackArgs {
+    state: String,
+    auth_code: String,
+}
+
+/// Handle Google's redirect containing final oauth details.
+pub async fn oauth_callback(
+    req: HttpRequest,
+    Query(oauth_args): Query<OauthCallbackArgs>,
+    auth: web::Data<Addr<Authenticator>>,
+    client: web::Data<Arc<BasicClient>>,
+) -> Result<HttpResponse, Error> {
+    // Challenges are persisted between before consent and at callback
+    let uid_cookie = req
+        .cookie(HTTP_CHALLENGE_COOKIE_NAME)
+        .ok_or(AuthError::SessionNonexistent)?;
+
+    match oauth_args {
+        OauthCallbackArgs { state, auth_code } => {
+            let challenge = ExecuteChallenge {
+                uid_cookie,
+                csrf_token: CsrfToken::new(state),
+                authorization_code: AuthorizationCode::new(auth_code),
+                client: (**client).clone(),
+            };
+
+            // Let the authenticator exchange the code and validate the user's identity. We will now have
+            // an encrypted base64 JWT to save in a cookie
+            let jwt = auth
+                .send(challenge)
+                .await
+                .map_err(|e| error::ErrorInternalServerError(e))??;
+
+            // Send the user to the homepage and save the JWT as a cookie
+            Ok(HttpResponse::TemporaryRedirect()
+                .set_header("Location", "/index.html")
+                .cookie(Cookie::new(HTTP_JWT_COOKIE_NAME, jwt))
+                .finish())
+        }
+    }
 }
 
 /// Serves the static UI after logging the user in
@@ -68,7 +124,10 @@ pub async fn ui_index(
         return Ok(HttpResponse::TemporaryRedirect()
             .set_header("Location", auth_url.as_str())
             // Save the encrypted unique identifier for the user's challenge as a session cookie
-            .cookie(Cookie::new(HTTP_CHALLENGE_COOKIE_NAME, base64::encode(challenge_session)))
+            .cookie(Cookie::new(
+                HTTP_CHALLENGE_COOKIE_NAME,
+                base64::encode(challenge_session),
+            ))
             .finish());
     }
 

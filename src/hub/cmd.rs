@@ -1,6 +1,9 @@
-use std::{str::FromStr, error::Error, fmt, sync::Arc};
-use super::{room::{RoomError, Room}, msg::NotifyTxt};
-use actix::{Recipient, Message, Addr};
+use super::{
+    msg::NotifyTxt,
+    room::{Room, RoomError},
+};
+use actix::{Addr, Message, Recipient};
+use std::{error::Error, fmt, str::FromStr, sync::Arc};
 
 pub const CMD_NAMES: [(&str, CmdTypes); 2] =
     [("MSG", CmdTypes::Msg), ("JOIN_ROOM", CmdTypes::JoinRoom)];
