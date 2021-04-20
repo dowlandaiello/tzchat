@@ -324,9 +324,17 @@ impl<'a> Handler<AssertJwtValid<'a>> for Authenticator {
         msg: AssertJwtValid,
         _ctx: &mut Self::Context,
     ) -> Result<String, AuthError> {
+        let b64_jwt = msg
+            .0
+            .to_string()
+            .split("=")
+            .nth(1)
+            .map(|s| s.to_owned())
+            .ok_or(AuthError::InvalidToken)?;
+
         // The JWT is encoded in base64. Decode it
-        let jwt = base64::decode(msg.0.to_string())
-            .map_err(|e| AuthError::SerializationError(e.to_string()))?;
+        let jwt =
+            base64::decode(b64_jwt).map_err(|e| AuthError::SerializationError(e.to_string()))?;
 
         // JWT's are stored as serde/bincode-encoded bytes on the client's end. Deserialize and
         // verify it. Then, move out the email.
