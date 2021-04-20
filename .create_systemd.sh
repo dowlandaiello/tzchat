@@ -16,6 +16,7 @@ Environment=TZ_CLIENT_ID=$TZ_CLIENT_ID
 Environment=TZ_SECRET=$TZ_SECRET
 Environment=SSL_CERT_PATH=$SSL_CERT_PATH
 Environment=SSL_KEY_PATH=$SSL_KEY_PATH
+Environment=RUST_LOG=debug
 Type=simple
 WorkingDirectory=$(pwd)
 ExecStart=$HOME/.cargo/bin/cargo run" > ~/.local/share/systemd/user/tzchat.service
