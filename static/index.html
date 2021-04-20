@@ -6,7 +6,12 @@
 </head>
 <body>
 <script type="application/javascript">
-	const sock = new WebSocket("ws://localhost:8080/ws/");
+	// The domain the page is being served on
+	let [_, isHttps, domain] = document.location.toString().match(/http(s?):\/\/(.+)\//);
+	let wsPath = `${!isHttps ? "ws" : "wss"}://${domain}/ws/`;
+
+	// Websockets should be served from the root of the webpage + /ws/
+	const sock = new WebSocket(wsPath);
 </script>
 </body>
 </html>

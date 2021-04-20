@@ -1,0 +1,26 @@
+name: Homelab Deployment
+on: [push]
+jobs:
+  Start-Cargo-Server:
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - run: "checking out GitHub repo..."
+      - run: cd tzhs.chat || (git clone git@github.com:dowlandaiello/tzhs.chat && cd tzhs.chat)
+      - run: "checking systemd configuration..."
+      - run: stat $HOME/.local/share/systemd/user/tzchat.service || echo "[Unit]
+        Description=The tzchat server
+        After=network-online.target
+
+        [Install]
+        WantedBy=multi-user.target
+
+        [Service]
+        User=$(whoami)
+        Type=simple
+        WorkingDirectory=$(pwd)
+        ExecStart=$HOME/.cargo/bin/cargo start
+        " > $HOME/.local/share/systemd/user/tzchat.service
+      - run: "building and starting actix server..."
+      - run: cargo build
+      - run: "spawning actix server..."
+      - run: systemctl --user restart tzhschat
