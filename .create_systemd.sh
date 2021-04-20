@@ -1,4 +1,9 @@
 #!/usr/bin/env sh
+
+source $HOME/.profile
+
+echo $TZ_CLIENT_ID
+
 echo "[Unit]
 Description=The tzchat server
 After=network-online.target
