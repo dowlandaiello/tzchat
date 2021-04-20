@@ -7,7 +7,6 @@ After=network-online.target
 WantedBy=multi-user.target
 
 [Service]
-User=$(whoami)
 Type=simple
 WorkingDirectory=$(pwd)
 ExecStart=$HOME/.cargo/bin/cargo start" > ~/.local/share/systemd/user/tzchat.service
