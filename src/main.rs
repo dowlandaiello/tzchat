@@ -62,7 +62,7 @@ async fn main() -> std::io::Result<()> {
         )?);
 
         let certs = pemfile::certs(&mut cert_file)
-            .map_err(|_| Error::new(ErrorKind::InvalidData, "failedd to decode SSL cert"))?;
+            .map_err(|_| Error::new(ErrorKind::InvalidData, "failed to decode SSL cert"))?;
         let key = pemfile::pkcs8_private_keys(&mut key_file)
             .map_err(|_| Error::new(ErrorKind::InvalidData, "failed to decode SSL key"))
             .map(|mut keys| keys.remove(0))?;
