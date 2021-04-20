@@ -83,6 +83,7 @@ async fn main() -> std::io::Result<()> {
             .data(auth_addr.clone())
             .data(oauth_client.clone())
             .route("/index.html", web::get().to(ui_index))
+            .route("/", web::get().to(ui_index))
             .service(web::resource("/oauth/callback").route(web::get().to(oauth_callback)))
             .service(web::resource("/ws/").route(web::get().to(ws_index)))
             // When users request files like index.html, just get them from the static folder
