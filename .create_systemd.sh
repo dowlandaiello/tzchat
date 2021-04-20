@@ -9,4 +9,4 @@ WantedBy=multi-user.target
 [Service]
 Type=simple
 WorkingDirectory=$(pwd)
-ExecStart=$HOME/.cargo/bin/cargo start" > ~/.local/share/systemd/user/tzchat.service
+ExecStart=$HOME/.cargo/bin/cargo run" > ~/.local/share/systemd/user/tzchat.service
