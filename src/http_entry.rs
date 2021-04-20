@@ -139,10 +139,6 @@ pub async fn ui_index(
                     HTTP_CHALLENGE_COOKIE_NAME,
                     base64::encode(challenge_session),
                 )
-                .path("/")
-                .secure(true)
-                .domain("tzhs.chat")
-                .domain("localhost")
                 .finish(),
             )
             .finish());

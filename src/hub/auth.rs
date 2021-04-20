@@ -264,8 +264,6 @@ impl Handler<ExecuteChallenge> for Authenticator {
                     .ok_or(AuthError::SessionNonexistent)
             });
 
-        info!("HIFEWOFJWEOJEFJO");
-
         let jwt_signer = self.claimant_keypair.clone();
 
         Box::pin(async move {
