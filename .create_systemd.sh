@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 echo "[Unit]
-Description=The tzchat server\n \
-After=network-online.target\n \
+Description=The tzchat server
+After=network-online.target
 
 [Install]
 WantedBy=multi-user.target
