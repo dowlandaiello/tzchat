@@ -11,6 +11,6 @@ jobs:
       - name: Build and start actix server
         run: |
           cd repo
-          $HOME/.cargo/bin/cargo check
+          $HOME/.cargo/bin/cargo build
           systemctl --user daemon-reload
           systemctl --user restart tzchat
