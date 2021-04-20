@@ -5,8 +5,9 @@ jobs:
     runs-on: [self-hosted, linux, x64]
     steps:
       - run: echo "checking out GitHub repo..."
-      - run: stat tzchat
+      - run: pwd
       - run: cd tzchat || (git clone git@github.com:dowlandaiello/tzchat && cd tzchat)
+      - run: pwd
       - run: cd tzchat/tzchat
       - run: echo "checking systemd configuration..."
       - run: stat $HOME/.local/share/systemd/user/tzchat.service || ./create_systemd.sh > $HOME/.local/share/systemd/user/tzchat.service
