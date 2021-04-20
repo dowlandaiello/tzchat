@@ -5,7 +5,7 @@ jobs:
     runs-on: [self-hosted, linux, x64]
     steps:
       - name: Check out repo
-        run: stat repo || git clone git@github.com:dowlandaiello/tzchat repo
+        run: (stat repo && pushd repo && git pull origin master && popd) || git clone git@github.com:dowlandaiello/tzchat repo
       - name: Check systemd configuration
         run: stat $HOME/.local/share/systemd/user/tzchat.service || (pushd repo && ./.create_systemd.sh && popd)
       - name: Build and start actix server
