@@ -7,9 +7,10 @@ jobs:
       - name: Check out repo
         run: (stat repo && pushd repo && git pull origin master && popd) || git clone git@github.com:dowlandaiello/tzchat repo
       - name: Check systemd configuration
-        run: stat $HOME/.local/share/systemd/user/tzchat.service || (pushd repo && ./.create_systemd.sh && popd)
+        run: pushd repo && ./.create_systemd.sh && popd
       - name: Build and start actix server
         run: |
           cd repo
           $HOME/.cargo/bin/cargo check
+          systemctl --user daemon-reload
           systemctl --user restart tzchat
