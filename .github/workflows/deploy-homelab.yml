@@ -5,7 +5,7 @@ jobs:
     runs-on: [self-hosted, linux, x64]
     steps:
       - run: "checking out GitHub repo..."
-      - run: cd tzhs.chat || (git clone git@github.com:dowlandaiello/tzhs.chat && cd tzhs.chat)
+      - run: cd tzchat || (git clone git@github.com:dowlandaiello/tzchat && cd tzchat)
       - run: "checking systemd configuration..."
       - run: stat $HOME/.local/share/systemd/user/tzchat.service || echo "[Unit]
         Description=The tzchat server
