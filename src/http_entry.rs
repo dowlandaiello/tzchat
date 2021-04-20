@@ -79,13 +79,12 @@ pub async fn oauth_callback(
                 .await
                 .map_err(|e| error::ErrorInternalServerError(e))??;
 
-            info!("IEOJWFJOWEFOWEFJOWEJFO");
-
             // Send the user to the homepage and save the JWT as a cookie
             Ok(HttpResponse::TemporaryRedirect()
                 .set_header("Location", "/index.html")
                 .cookie(
                     Cookie::build(HTTP_JWT_COOKIE_NAME, jwt)
+                    .path("/")
                         .finish(),
                 )
                 .finish())
@@ -102,7 +101,6 @@ pub async fn ui_index(
     // Automatically sign the user in before they view the UI if they aren't already (don't verify
     // now. even hackers should be able to view the UI :D)
     if req.cookie(HTTP_JWT_COOKIE_NAME).is_none() {
-        info!("HMMMMMM");
         // The user is not already logged in on this device. Hence, we need to send them through an
         // oauth flow to get their consent if needed but always get their email and then set a
         // semi-perm session
@@ -138,6 +136,7 @@ pub async fn ui_index(
                     HTTP_CHALLENGE_COOKIE_NAME,
                     base64::encode(challenge_session),
                 )
+                .path("/")
                 .finish(),
             )
             .finish());
