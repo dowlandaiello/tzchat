@@ -29,7 +29,7 @@ pub async fn ws_index(
     // Ensure both that the JWT session exists and that it is valid
     let jwt_cookie = req
         .cookie(HTTP_JWT_COOKIE_NAME)
-        .ok_or(AuthError::InvalidToken)?;
+        .ok_or_else(|| {info!("JFEOWWJOFJWE"); AuthError::InvalidToken})?;
     let email = auth
         .send(AssertJwtValid(jwt_cookie))
         .await
