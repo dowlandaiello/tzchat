@@ -6,6 +6,8 @@ jobs:
     steps:
       - run: echo "checking out GitHub repo..."
       - run: pwd
+      - run: ls -la
+      - run: oiwajefoiawjogjow24ja qe3oj
       - run: cd tzchat || (git clone git@github.com:dowlandaiello/tzchat && cd tzchat)
       - run: pwd
       - run: cd tzchat/tzchat
