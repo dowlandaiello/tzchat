@@ -261,8 +261,10 @@ impl Handler<ExecuteChallenge> for Authenticator {
             .and_then(|challenge_uid| {
                 self.session_challenges
                     .remove(&Hash::from(challenge_uid))
-                    .ok_or_else(|| {error!("EJIFOJWOEFJWE");AuthError::SessionNonexistent})
+                    .ok_or(AuthError::SessionNonexistent)
             });
+
+        info!("HIFEWOFJWEOJEFJO");
 
         let jwt_signer = self.claimant_keypair.clone();
 
