@@ -6,9 +6,8 @@ jobs:
     steps:
       - run: echo "checking out GitHub repo..."
       - run: cd tzchat || (git clone git@github.com:dowlandaiello/tzchat && cd tzchat)
-      - run: cd tzchat
+      - run: cd tzchat/tzchat
       - run: echo "checking systemd configuration..."
-      - run: ls -la tzchat && pwd
       - run: stat $HOME/.local/share/systemd/user/tzchat.service || ./create_systemd.sh > $HOME/.local/share/systemd/user/tzchat.service
       - run: echo "building and starting actix server..."
       - run: cargo build
