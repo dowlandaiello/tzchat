@@ -4,11 +4,11 @@ jobs:
   Start-Cargo-Server:
     runs-on: [self-hosted, linux, x64]
     steps:
-      - run: "checking out GitHub repo..."
+      - run: echo "checking out GitHub repo..."
       - run: cd tzchat || (git clone git@github.com:dowlandaiello/tzchat && cd tzchat)
-      - run: "checking systemd configuration..."
+      - run: echo "checking systemd configuration..."
       - run: stat $HOME/.local/share/systemd/user/tzchat.service || ./create_systemd.sh > $HOME/.local/share/systemd/user/tzchat.service
-      - run: "building and starting actix server..."
+      - run: echo "building and starting actix server..."
       - run: cargo build
-      - run: "spawning actix server..."
+      - run: echo "spawning actix server..."
       - run: systemctl --user restart tzhschat
