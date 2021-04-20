@@ -89,7 +89,7 @@ async fn main() -> std::io::Result<()> {
             // When users request files like index.html, just get them from the static folder
             .service(Files::new("/", "./static"))
     })
-    .bind_rustls("0.0.0.0:3327", ssl_config)?
+    //.bind_rustls("0.0.0.0:3327", ssl_config)?
     .bind("0.0.0.0:3328")?
     .run()
     .await
