@@ -84,10 +84,6 @@ pub async fn oauth_callback(
                 .set_header("Location", "/index.html")
                 .cookie(
                     Cookie::build(HTTP_JWT_COOKIE_NAME, jwt)
-                        .path("/")
-                        .secure(true)
-                        .domain("tzhs.chat")
-                        .domain("localhost")
                         .finish(),
                 )
                 .finish())
