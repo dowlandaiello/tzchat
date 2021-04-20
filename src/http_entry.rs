@@ -102,6 +102,7 @@ pub async fn ui_index(
     // Automatically sign the user in before they view the UI if they aren't already (don't verify
     // now. even hackers should be able to view the UI :D)
     if req.cookie(HTTP_JWT_COOKIE_NAME).is_none() {
+        info!("HMMMMMM");
         // The user is not already logged in on this device. Hence, we need to send them through an
         // oauth flow to get their consent if needed but always get their email and then set a
         // semi-perm session
