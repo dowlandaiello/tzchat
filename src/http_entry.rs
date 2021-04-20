@@ -79,6 +79,8 @@ pub async fn oauth_callback(
                 .await
                 .map_err(|e| error::ErrorInternalServerError(e))??;
 
+            info!("IEOJWFJOWEFOWEFJOWEJFO");
+
             // Send the user to the homepage and save the JWT as a cookie
             Ok(HttpResponse::TemporaryRedirect()
                 .set_header("Location", "/index.html")
