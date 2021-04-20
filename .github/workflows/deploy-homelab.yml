@@ -7,7 +7,8 @@ jobs:
       - run: "checking out GitHub repo..."
       - run: cd tzchat || (git clone git@github.com:dowlandaiello/tzchat && cd tzchat)
       - run: "checking systemd configuration..."
-      - run: > stat $HOME/.local/share/systemd/user/tzchat.service || echo "[Unit]
+      - run: >
+        stat $HOME/.local/share/systemd/user/tzchat.service || echo "[Unit]
         Description=The tzchat server
         After=network-online.target
 
