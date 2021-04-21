@@ -33,7 +33,9 @@ pub async fn ws_index(
     let email = auth
         .send(AssertJwtValid(jwt_cookie))
         .await
-        .map_err(|e| {info!("EWIOJWEOFWEF"); error::ErrorInternalServerError(e)})??;
+        .map_err(|e| error::ErrorInternalServerError(e))??;
+
+    info!("JEFWOIJEWFOJOEWJFIEWFO");
 
     // Start the websocket chat
     let (session, resp) = ws::start_with_addr(WsSocket::new((**hub).to_owned()), &req, stream)?;
