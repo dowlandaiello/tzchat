@@ -20,6 +20,9 @@
 		<input id="msgCts" type="text">
 		</input>
 		<br>
+		<input id="msgUsername" type="text">
+		</input>
+		<br>
 		<input type="submit" value="Submit">
 	</form>
 
@@ -63,7 +66,8 @@
 
 		// Send the message
 		const msg = document.getElementById("msgCts").value;
-		sock.send(`MSG␝`);
+		const msgUsername = document.getElementById("msgUsername").value;
+		sock.send(`MSG␝${msgUsername}␝${msg}`);
 	};
 
 	// The user wants to register a username
