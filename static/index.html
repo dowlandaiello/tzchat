@@ -22,6 +22,15 @@
 		<br>
 		<input type="submit" value="Submit">
 	</form>
+
+	<form onsubmit="addUsername(event)">
+		Claim Username
+		<br>
+		<input id="username" type="text">
+		</input>
+		<br>
+		<input type="submit" value="Submit">
+	</form>
 </body>
 <script type="application/javascript">
 	// The domain the page is being served on
@@ -52,9 +61,18 @@
 	const sendMessage = e => {
 		e.preventDefault();
 
-		// TODO: Come up with a new client-side message for registering new aliases, and a command for listing the aliased users in the room
+		// Send the message
 		const msg = document.getElementById("msgCts").value;
-		sock.send(`MSG␝`)
+		sock.send(`MSG␝`);
+	};
+
+	// The user wants to register a username
+	const addUsername = e => {
+		e.preventDefault();
+
+		// Register the username
+		const username = document.getElementById("username").value;
+		sock.send(`USE_ALIAS␝${username}`);
 	};
 </script>
 </html>
