@@ -36,7 +36,7 @@ pub async fn ws_index(
         .map_err(|e| error::ErrorInternalServerError(e))??;
 
     // Start the websocket chat
-    let (session, resp) = ws::start_with_addr(WsSocket::new((**hub).to_owned()), &req, stream).map_err(|e| {error!("{:?}", e); e})?;
+    let (session, resp) = ws::start_with_addr(WsSocket::new((**hub).to_owned(), (**auth).to_owned()), &req, stream).map_err(|e| {error!("{:?}", e); e})?;
 
     // The user has now been authenticated
     auth.do_send(AssumeIdentity { session, email });

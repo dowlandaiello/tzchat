@@ -12,6 +12,7 @@ pub mod auth;
 
 use actix::{fut, Actor, ActorFuture, Addr, AsyncContext, Context, Handler, StreamHandler};
 use actix_web_actors::ws::{Message as WsMessage, ProtocolError, WebsocketContext};
+use auth::{Authenticator, RegisterAlias};
 use cmd::{Cmd, CmdTypes, JoinRoom};
 use msg::{Msg, NotifyTxt, PubMsg};
 use room::{Room, RoomError, SubscribeToRoom};
@@ -38,12 +39,12 @@ impl Handler<JoinRoom> for Hub {
     type Result = Result<Addr<Room>, RoomError>;
 
     fn handle(&mut self, msg: JoinRoom, _ctx: &mut Self::Context) -> Result<Addr<Room>, RoomError> {
-        info!("user joined room {}", msg.0);
-
         let room = self
             .topics
             .get(msg.0.as_str())
             .ok_or(RoomError::RoomDoesNotExist)?;
+
+        info!("user joined room {}", msg.0);
         room.do_send(SubscribeToRoom(msg.1));
 
         // TODO: BLOCK NON-PRIVILEGED USERS
@@ -55,13 +56,15 @@ impl Handler<JoinRoom> for Hub {
 /// A client connected to the hub.
 pub struct WsSocket {
     hub: Addr<Hub>,
+    auth: Addr<Authenticator>,
     joined_rooms: HashMap<Arc<String>, Addr<Room>>,
 }
 
 impl WsSocket {
-    pub fn new(hub: Addr<Hub>) -> Self {
+    pub fn new(hub: Addr<Hub>, auth: Addr<Authenticator>) -> Self {
         Self {
             hub,
+            auth,
             joined_rooms: HashMap::new(),
         }
     }
@@ -114,6 +117,27 @@ impl StreamHandler<Result<WsMessage, ProtocolError>> for WsSocket {
                         }
                         Err(e) => ctx.text(format!("error: {:?}", e)),
                     },
+                    // The user wishes to register a new alias
+                    CmdTypes::UseAlias => {
+                        if let Some(alias) = cmd.args.pop() {
+                            // Asynchronously register the alias AND afterwards, ensure no error was
+                            // returned. Communicate to the user if one was
+                            let register_alias_fut = fut::wrap_future::<_, Self>(
+                                self.auth.send(RegisterAlias(alias, ctx.address())),
+                            )
+                            .map(|res, _act, ctx| match res {
+                                Ok(res) => match res {
+                                    Ok(_) => (),
+                                    Err(e) => ctx.text(format!("error: {:?}", e)),
+                                },
+                                Err(e) => ctx.text(format!("error: {:?}", e)),
+                            });
+
+                            ctx.spawn(register_alias_fut);
+                        } else {
+                            ctx.text(format!("error: missing alias"))
+                        }
+                    }
                 },
                 Err(e) => ctx.text(format!("error: {:?}", e)),
             },

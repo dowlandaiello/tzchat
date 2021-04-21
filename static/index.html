@@ -5,6 +5,24 @@
 	<title>TZHS Student-Only Chat</title>
 </head>
 <body>
+	<form onsubmit="joinRoom(event)">
+		Join Room
+		<br>
+		<input id="roomName" type="text">
+		</input>
+		<br>
+		<input type="submit" value="Submit">
+	</form>
+
+	<form onsubmit="sendMessage(event)">
+		Send Message
+		<br>
+		<input id="msgCts" type="text">
+		</input>
+		<br>
+		<input type="submit" value="Submit">
+	</form>
+</body>
 <script type="application/javascript">
 	// The domain the page is being served on
 	let [_, isHttps, domain] = document.location.toString().match(/http(s?):\/\/(.+)\//);
@@ -12,6 +30,31 @@
 
 	// Websockets should be served from the root of the webpage + /ws/
 	const sock = new WebSocket(wsPath);
+
+	sock.addEventListener("open", (e) => {
+		console.log("successfully connected to chat server");
+	});
+
+	sock.addEventListener("message", (e) => {
+		console.log(`msg: ${e.data}`);
+	});
+
+	// The user wishes to join a room
+	const joinRoom = e => {
+		e.preventDefault();
+
+		// Join the specified room
+		const roomName = document.getElementById("roomName").value;
+		sock.send(`JOIN_ROOM␝${roomName}`);
+	};
+
+	// The user wants to send a message in the current room
+	const sendMessage = e => {
+		e.preventDefault();
+
+		// TODO: Come up with a new client-side message for registering new aliases, and a command for listing the aliased users in the room
+		const msg = document.getElementById("msgCts").value;
+		sock.send(`MSG␝`)
+	};
 </script>
-</body>
 </html>

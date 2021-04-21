@@ -42,7 +42,7 @@ async fn main() -> std::io::Result<()> {
                     .map(|dev_var| dev_var.parse::<bool>().unwrap())
                     .unwrap_or(false)
                 {
-                    "http://localhost:8080/oauth/callback".to_owned()
+                    "http://localhost:3328/oauth/callback".to_owned()
                 } else {
                     "https://tzhs.chat/oauth/callback".to_owned()
                 },
@@ -51,7 +51,9 @@ async fn main() -> std::io::Result<()> {
         ),
     );
     // Load the SSL config by reading env variables for cert and key paths
-    let ssl_config = {
+    // NOTE: SSL isn't necessary since we are reverse proxying through apache, which DOES use a
+    // cert + key
+    let _ssl_config = {
         // NOTE: The SSL_CERT_PATH and SSL_KEY_PATH environment variables can be used to specify
         // where SSL files lie
         let mut cert_file = BufReader::new(File::open(
