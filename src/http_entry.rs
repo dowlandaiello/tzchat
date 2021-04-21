@@ -29,11 +29,11 @@ pub async fn ws_index(
     // Ensure both that the JWT session exists and that it is valid
     let jwt_cookie = req
         .cookie(HTTP_JWT_COOKIE_NAME)
-        .ok_or_else(|| {info!("JFEOWWJOFJWE"); AuthError::InvalidToken})?;
+        .ok_or(AuthError::InvalidToken)?;
     let email = auth
         .send(AssertJwtValid(jwt_cookie))
         .await
-        .map_err(|e| error::ErrorInternalServerError(e))??;
+        .map_err(|e| {info!("EWIOJWEOFWEF"); error::ErrorInternalServerError(e)})??;
 
     // Start the websocket chat
     let (session, resp) = ws::start_with_addr(WsSocket::new((**hub).to_owned()), &req, stream)?;
