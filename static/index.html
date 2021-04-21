@@ -34,6 +34,9 @@
 		<br>
 		<input type="submit" value="Submit">
 	</form>
+
+	<textarea id="messages">
+	</textarea>
 </body>
 <script type="application/javascript">
 	// The domain the page is being served on
@@ -49,7 +52,10 @@
 	});
 
 	sock.addEventListener("message", (e) => {
-		console.log(`msg: ${e.data}`);
+		const rawMessage = e.data;
+		const [, , sender, msg] = rawMessage.split("␝");
+
+		document.getElementById("messages").value += `${sender}: ${msg}\n`;
 	});
 
 	// The user wishes to join a room
@@ -60,6 +66,10 @@
 		const roomName = document.getElementById("roomName").value;
 		currentRoom = roomName;
 		sock.send(`JOIN_ROOM␝${roomName}`);
+
+		// Show the user the new room
+		document.title = `#${roomName}: tzhs.chat`
+		document.getElementById("messages").value = "";
 	};
 
 	// The user wants to send a message in the current room
@@ -80,5 +90,8 @@
 		const username = document.getElementById("username").value;
 		sock.send(`USE_ALIAS␝${username}`);
 	};
+
+	var exports = {"__esModule": true};
 </script>
+<script src="js/blockies.js" type="module"></script>
 </html>

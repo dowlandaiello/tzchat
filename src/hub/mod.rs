@@ -110,12 +110,17 @@ impl StreamHandler<Result<WsMessage, ProtocolError>> for WsSocket {
                     // The user wishes to broadcast a message to other users in the provided context
                     CmdTypes::Msg => match <Cmd as TryInto<Msg>>::try_into(cmd) {
                         Ok(msg) => {
-                            if let Some(room) = self.joined_rooms.get(&msg.ctx.to_string()).map(|room| room.clone()) {
+                            if let Some(room) = self
+                                .joined_rooms
+                                .get(&msg.ctx.to_string())
+                                .map(|room| room.clone())
+                            {
                                 let sess_addr = ctx.address();
 
                                 // Ensure that the user is permitted to send messages in the room
                                 // and as the user
-                                let authenticate_and_pub_msg_fut = self.auth
+                                let authenticate_and_pub_msg_fut = self
+                                    .auth
                                     .send(AssertContextAccessPermissible {
                                         ctx: Some(msg.ctx.clone()),
                                         sending_alias: Some(msg.sender.clone()),
@@ -127,7 +132,13 @@ impl StreamHandler<Result<WsMessage, ProtocolError>> for WsSocket {
                                             .map_err(|e| AuthError::OauthError(e.to_string()))
                                             .flatten()
                                         {
-                                            Ok(_) => room.do_send(PubMsg(msg)),
+                                            Ok(_) => {
+                                                debug!(
+                                                    "publishing message from user {}",
+                                                    msg.sender
+                                                );
+                                                room.do_send(PubMsg(msg))
+                                            }
                                             Err(e) => ctx.text(format!("error: {:?}", e)),
                                         }
                                     });
