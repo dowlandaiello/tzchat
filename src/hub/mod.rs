@@ -10,9 +10,11 @@ pub mod room;
 /// with their current google cookie
 pub mod auth;
 
-use actix::{fut, Actor, ActorFuture, Addr, AsyncContext, Context, Handler, StreamHandler};
+use actix::{
+    fut, Actor, ActorFuture, Addr, AsyncContext, Context, Handler, StreamHandler, WrapFuture,
+};
 use actix_web_actors::ws::{Message as WsMessage, ProtocolError, WebsocketContext};
-use auth::{Authenticator, RegisterAlias};
+use auth::{AssertContextAccessPermissible, AuthError, Authenticator, RegisterAlias};
 use cmd::{Cmd, CmdTypes, JoinRoom};
 use msg::{Msg, NotifyTxt, PubMsg};
 use room::{Room, RoomError, SubscribeToRoom};
@@ -91,26 +93,46 @@ impl StreamHandler<Result<WsMessage, ProtocolError>> for WsSocket {
                             .send(JoinRoom(Arc::clone(&room_name), ctx.address().recipient()));
 
                         // Record the address of the room after joining
-                        let record_room_fut =
-                            fut::wrap_future::<_, Self>(res).map(|res, act, ctx| {
-                                match res {
-                                    Ok(res) => match res {
-                                        Ok(room_addr) => {
-                                            act.joined_rooms.insert(room_name, room_addr);
-                                        }
-                                        Err(e) => ctx.text(format!("error: {:?}", e)),
-                                    },
+                        let record_room_fut = res.into_actor(self).map(|res, act, ctx| {
+                            match res {
+                                Ok(res) => match res {
+                                    Ok(room_addr) => {
+                                        act.joined_rooms.insert(room_name, room_addr);
+                                    }
                                     Err(e) => ctx.text(format!("error: {:?}", e)),
-                                };
-                            });
+                                },
+                                Err(e) => ctx.text(format!("error: {:?}", e)),
+                            };
+                        });
 
                         ctx.spawn(record_room_fut);
                     }
                     // The user wishes to broadcast a message to other users in the provided context
                     CmdTypes::Msg => match <Cmd as TryInto<Msg>>::try_into(cmd) {
                         Ok(msg) => {
-                            if let Some(room) = self.joined_rooms.get(&msg.ctx.to_string()) {
-                                room.do_send(PubMsg(msg));
+                            if let Some(room) = self.joined_rooms.get(&msg.ctx.to_string()).map(|room| room.clone()) {
+                                let sess_addr = ctx.address();
+
+                                // Ensure that the user is permitted to send messages in the room
+                                // and as the user
+                                let authenticate_and_pub_msg_fut = self.auth
+                                    .send(AssertContextAccessPermissible {
+                                        ctx: Some(msg.ctx.clone()),
+                                        sending_alias: Some(msg.sender.clone()),
+                                        session: sess_addr,
+                                    })
+                                    .into_actor(self)
+                                    .map(move |res, _act, ctx| {
+                                        match res
+                                            .map_err(|e| AuthError::OauthError(e.to_string()))
+                                            .flatten()
+                                        {
+                                            Ok(_) => room.do_send(PubMsg(msg)),
+                                            Err(e) => ctx.text(format!("error: {:?}", e)),
+                                        }
+                                    });
+
+                                ctx.spawn(authenticate_and_pub_msg_fut);
                             } else {
                                 ctx.text("error: room does not exist")
                             }

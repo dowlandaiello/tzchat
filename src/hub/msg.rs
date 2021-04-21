@@ -63,8 +63,8 @@ impl FromStr for MsgContext {
 #[derive(Clone)]
 pub struct Msg {
     pub ctx: MsgContext,
-    pub sender: String,
-    pub text: String,
+    pub sender: Arc<String>,
+    pub text: Arc<String>,
 }
 
 impl fmt::Display for Msg {
@@ -84,8 +84,8 @@ impl TryFrom<Cmd> for Msg {
         } else {
             c.args.remove(0).parse().map(|ctx| Self {
                 ctx,
-                sender: c.args.remove(0),
-                text: c.args.remove(0),
+                sender: Arc::new(c.args.remove(0)),
+                text: Arc::new(c.args.remove(0)),
             })
         }
     }
@@ -112,8 +112,8 @@ impl FromStr for Msg {
         // Parsing the context requires string manipulation that could go wrong
         parts[1].parse().map(|ctx| Self {
             ctx,
-            sender: parts[2].to_owned(),
-            text: parts[3].to_owned(),
+            sender: Arc::new(parts[2].to_owned()),
+            text: Arc::new(parts[3].to_owned()),
         })
     }
 }
