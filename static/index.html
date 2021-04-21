@@ -39,6 +39,7 @@
 	// The domain the page is being served on
 	let [_, isHttps, domain] = document.location.toString().match(/http(s?):\/\/(.+)\//);
 	let wsPath = `${!isHttps ? "ws" : "wss"}://${domain}/ws/`;
+	let currentRoom = "";
 
 	// Websockets should be served from the root of the webpage + /ws/
 	const sock = new WebSocket(wsPath);
@@ -57,6 +58,7 @@
 
 		// Join the specified room
 		const roomName = document.getElementById("roomName").value;
+		currentRoom = roomName;
 		sock.send(`JOIN_ROOM␝${roomName}`);
 	};
 
@@ -67,7 +69,7 @@
 		// Send the message
 		const msg = document.getElementById("msgCts").value;
 		const msgUsername = document.getElementById("msgUsername").value;
-		sock.send(`MSG␝${msgUsername}␝${msg}`);
+		sock.send(`MSG␝${currentRoom}␝${msgUsername}␝${msg}`);
 	};
 
 	// The user wants to register a username
