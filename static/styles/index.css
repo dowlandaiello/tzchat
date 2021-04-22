@@ -118,6 +118,11 @@ input[type="text"]#msgCts {
   border-bottom: none;
 }
 
+input[type="text"]:focus {
+  border-radius: 0;
+  outline: none;
+}
+
 .send-button {
   background-color: #007aff;
   color: white;
@@ -165,10 +170,19 @@ input[type="text"]#msgCts {
   right: 0;
   left: 0;
 
-  z-index: 1;
+  z-index: -1;
 
   background-color: white;
   color: black;
+
+  opacity: 0%;
+
+  transition: z-index 0s, opacity 0.125s;
+}
+
+.modal-wrapper[visible] {
+  z-index: 1;
+  opacity: 100%;
 }
 
 .modal {
@@ -212,4 +226,22 @@ input[type="text"]#msgCts {
   flex-grow: 1;
 
   font-family: "Montserrat", sans-serif;
+}
+
+.close-button {
+  cursor: pointer;
+}
+
+.choices>p {
+  cursor: pointer;
+}
+
+.modal-note {
+  position: absolute;
+
+  bottom: 0;
+
+  font-family: "Montserrat", sans-serif;
+
+  font-style: italic;
 }

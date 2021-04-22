@@ -6,7 +6,6 @@ import { createIcon } from "./blockies.mjs";
 let [_, isHttps, domain] = document.location.toString().match(/http(s?):\/\/(.+)\//);
 let wsPath = `${!isHttps ? "ws" : "wss"}://${domain}/ws/`;
 let currentRoom = "";
-let currentAlias = "";
 
 // Websockets should be served from the root of the webpage + /ws/
 const sock = new WebSocket(wsPath);
@@ -16,12 +15,6 @@ const messageHolder = document.getElementById("messagesHolder");
 const messageTemplate = document.getElementById("message");
 
 sock.addEventListener("message", (e) => {
-	if (e.contains("error")) {
-		console.error(e);
-
-		return;
-	}
-
 	const rawMessage = e.data;
 	const [, , sender, msg] = rawMessage.split("␝");
 
@@ -69,12 +62,6 @@ const sendMsgButton = document.getElementById("sendMsg");
 window.sendMessage = e => {
 	e.preventDefault();
 
-	if (!currentAlias) {
-		alert("Before sending a message, please select a username by clicking the user settings icon.");
-
-		return;
-	}
-
 	// Send the message
 	sock.send(`MSG␝${currentRoom}␝${currentAlias}␝${msgInput.value}`);
 };
@@ -111,52 +98,24 @@ document.getElementById("some-id").setAttribute("id", "aliasModal")
 
 aliasModal = document.querySelector("#aliasModal");
 
+// Add a button to the modal to let users request new aliases
 let newAliasButton = aliasModal.querySelector(".choices").children[0];
-
-// Allow users to choose from the aliases that they have
-const chooseNewAlias = e => {
-	e.preventDefault();
-
-	currentAlias = e.target.innerHTML;
-	msgInput.setAttribute("placeholder", `Send a message as ${currentAlias}`)
-
-	reloadModal();
-};
-
+newAliasButton.innerHTML = "Claim New Username +";
+newAliasButton.setAttribute("style", "font-weight: bold;")
 let choiceTemplate = newAliasButton.cloneNode(true);
 
-newAliasButton.innerHTML = "Claim New Username +";
-newAliasButton.setAttribute("style", "font-weight: bold;");
-
 // Refetches the list of aliases in the alias modal
-const reloadModal = () => fetch(
-		"/api/aliases", {credentials: "same-origin"}
-	).then(resp => resp.json()).then(aliases => {
-		let choiceContainer = aliasModal.querySelector(".choices");
-
-		// Remove all choices EXCEPT the new username button
-		Array.from(choiceContainer.children).filter((node) => node != newAliasButton).forEach((node) => node.remove());
-
-		aliases.forEach((alias) => {
-			// Allow the user to choose the alias
-			let choiceButton = choiceTemplate.cloneNode(true);
-			choiceButton.addEventListener("touchend", chooseNewAlias);
-			choiceButton.addEventListener("click", chooseNewAlias)
-			choiceButton.innerHTML = alias;
-
-			if (alias === currentAlias) {
-				choiceButton.setAttribute("style", "font-weight: bold");
-			}
-
-			choiceContainer.insertBefore(choiceButton, newAliasButton);
-		})
+const reloadModal = () => {
+	// Request the user's aliases from the server
+	fetch("/api/aliases", {credentials: "same-origin"}).then(resp => resp.json()).then(aliases => {
+		console.log(choiceTemplate);
 	});
+};
 
 const showAliasModal = e => {
 	e.preventDefault();
 
-	reloadModal()
-		.then(() => aliasModal.setAttribute("visible", true));
+	aliasModal.setAttribute("visible", true);
 };
 
 chooseAliasButton.addEventListener("touchend", showAliasModal);
@@ -174,21 +133,4 @@ let closeModalButtons = document.querySelectorAll(".close-button");
 closeModalButtons.forEach((closeBtn) => {
 	closeBtn.addEventListener("touchend", closeModal);
 	closeBtn.addEventListener("click", closeModal);
-});
-
-// Handle clicks on the new username button
-const claimAlias = e => {
-	e.preventDefault();
-
-	const alias = prompt("Enter the username you would like to claim");
-	if (!alias) {
-		return;
-	}
-
-	// Claim the alias
-	sock.send(`USE_ALIAS␝${alias}`);
-	reloadModal();
-}
-
-newAliasButton.addEventListener("touchend", claimAlias);
-newAliasButton.addEventListener("click", claimAlias);
+})
