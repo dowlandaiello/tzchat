@@ -1,0 +1,215 @@
+h1, h2, h3, h4, h5, h6 {
+  font-family: "Montserrat", sans-serif;
+}
+
+html {
+  height: 100%;
+}
+
+body {
+  display: flex;
+  flex-flow: column nowrap;
+
+  height: 100vh;
+  margin: 0;
+}
+
+/* Site Branding */
+
+.navbar {
+  width: 100%;
+
+  position: relative;
+
+  display: flex;
+  flex-flow: row nowrap;
+
+  justify-content: center;
+  align-items: center;
+
+  margin-top: 1.75rem;
+}
+
+.titlebar {
+  display: flex;
+
+  flex-flow: column nowrap;
+
+  justify-content: center;
+  align-items: center;
+}
+
+.navbar>span {
+  position: absolute;
+  right: 1rem;
+
+  cursor: pointer;
+}
+
+.titlebar h1 {
+  font-size: 1rem;
+
+  margin: 0;
+}
+
+.titlebar h2 {
+  font-size: 1.25rem;
+
+  margin: 0;
+}
+
+.channel-indicator {
+  display: flex;
+
+  flex-flow: row nowrap;
+  align-items: center;
+
+  border-bottom: 1px dashed black;
+}
+
+.channel-indicator>span {
+  margin-left: 0.25rem;
+  font-size: 1rem;
+}
+
+/* Message Styling */
+
+#messagesHolder {
+  flex-grow: 1;
+
+  padding-left: 1rem;
+  padding-right: 1rem;
+
+  padding-top: 1rem;
+}
+
+.message {
+  width: 100%;
+
+  font-family: "Montserrat", sans-serif
+}
+
+.message-text>p {
+  margin: 0;
+}
+
+.message .author {
+  font-weight: bold;
+}
+
+/* The bottom message input */
+.input-section {
+  height: 5%;
+  display: flex;
+  flex-flow: row nowrap;
+}
+
+input[type="text"]#msgCts {
+  flex-grow: 1;
+
+  background-color: #e3e3e3;
+
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+
+  border-top: 0.5px rgba(0, 0, 0, 0.075) solid;
+  border-left: none;
+  border-right: none;
+  border-bottom: none;
+}
+
+.send-button {
+  background-color: #007aff;
+  color: white;
+
+  padding-left: 0;
+  padding-right: 0;
+
+  display: flex;
+  flex-flow: column nowrap;
+
+  justify-content: center;
+  align-items: center;
+
+  max-width: 0%;
+  overflow: hidden;
+
+  transition: 0.125s;
+}
+
+#msgCts:focus + .send-button {
+  max-width: 10%;
+
+  padding-left: 1rem;
+  padding-right: 1rem;
+
+  visibility: visible;
+}
+
+.send-button>span {
+  display: none;
+  transition: 0s;
+}
+
+#msgCts:focus + .send-button>span {
+  display: block;
+}
+
+/* Modals used to choose from multiple items */
+
+.modal-wrapper {
+  position: absolute;
+
+  top: 0;
+  bottom: 0;
+  right: 0;
+  left: 0;
+
+  z-index: 1;
+
+  background-color: white;
+  color: black;
+}
+
+.modal {
+  height: 100%;
+
+  display: flex;
+  flex-flow: column nowrap;
+
+  justify-content: center;
+  align-items: center;
+
+  position: relative;
+
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+.modal>.nav-section {
+  position: absolute;
+
+  top: 0;
+  right: 1rem;
+  left: 1rem;
+
+  display: flex;
+  flex-flow: row nowrap;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal>.choices {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+
+  display: flex;
+  flex-flow: column nowrap;
+
+  justify-content: center;
+  align-items: center;
+  flex-grow: 1;
+
+  font-family: "Montserrat", sans-serif;
+}

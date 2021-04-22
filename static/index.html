@@ -2,96 +2,56 @@
 <html lang="en-US">
 <head>
 	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>TZHS Student-Only Chat</title>
+	<link rel="stylesheet" href="styles/index.css">
+	<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+	<link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
 </head>
 <body>
-	<form onsubmit="joinRoom(event)">
-		Join Room
-		<br>
-		<input id="roomName" type="text">
-		</input>
-		<br>
-		<input type="submit" value="Submit">
-	</form>
-
-	<form onsubmit="sendMessage(event)">
-		Send Message
-		<br>
-		<input id="msgCts" type="text">
-		</input>
-		<br>
-		<input id="msgUsername" type="text">
-		</input>
-		<br>
-		<input type="submit" value="Submit">
-	</form>
-
-	<form onsubmit="addUsername(event)">
-		Claim Username
-		<br>
-		<input id="username" type="text">
-		</input>
-		<br>
-		<input type="submit" value="Submit">
-	</form>
-
-	<textarea id="messages">
-	</textarea>
+	<template id="message">
+		<div class="message">
+			<span class="pfp">
+			</span>
+			<div class="message-text">
+				<p class="author"></p>
+				<p class="msg-text"></p>
+			</div>
+		</div>
+	</template>
+	<template id="modal">
+		<div class="modal-wrapper">
+			<div class="modal">
+				<div class="nav-section">
+					<h1 id="title">Choices</h1>
+					<span class="material-icons">close</span>
+				</div>
+				<div class="choices">
+					<p id="choice"></p>
+				</div>
+			</div>
+		</div>
+	</template>
+	<div class="navbar">
+		<div class="titlebar">
+			<h1>tzhs.chat</h1>
+			<div class="channel-indicator">
+				<h2 id="roomNameLabel"></h2>
+				<span class="material-icons">arrow_drop_down</span>
+			</div>
+		</div>
+		<span class="material-icons-outlined" id="chooseAcc">manage_accounts</span>
+	</div>
+	<div id="messagesHolder">
+	</div>
+	<div class="input-section">
+		<input type="text" placeholder="Send a message" id="msgCts"></input>
+		<div class="send-button" id="sendMsg">
+			<span class="material-icons">send</span>
+		</div>
+	</div>
 </body>
-<script type="application/javascript">
-	// The domain the page is being served on
-	let [_, isHttps, domain] = document.location.toString().match(/http(s?):\/\/(.+)\//);
-	let wsPath = `${!isHttps ? "ws" : "wss"}://${domain}/ws/`;
-	let currentRoom = "";
-
-	// Websockets should be served from the root of the webpage + /ws/
-	const sock = new WebSocket(wsPath);
-
-	sock.addEventListener("open", (e) => {
-		console.log("successfully connected to chat server");
-	});
-
-	sock.addEventListener("message", (e) => {
-		const rawMessage = e.data;
-		const [, , sender, msg] = rawMessage.split("␝");
-
-		document.getElementById("messages").value += `${sender}: ${msg}\n`;
-	});
-
-	// The user wishes to join a room
-	const joinRoom = e => {
-		e.preventDefault();
-
-		// Join the specified room
-		const roomName = document.getElementById("roomName").value;
-		currentRoom = roomName;
-		sock.send(`JOIN_ROOM␝${roomName}`);
-
-		// Show the user the new room
-		document.title = `#${roomName}: tzhs.chat`
-		document.getElementById("messages").value = "";
-	};
-
-	// The user wants to send a message in the current room
-	const sendMessage = e => {
-		e.preventDefault();
-
-		// Send the message
-		const msg = document.getElementById("msgCts").value;
-		const msgUsername = document.getElementById("msgUsername").value;
-		sock.send(`MSG␝${currentRoom}␝${msgUsername}␝${msg}`);
-	};
-
-	// The user wants to register a username
-	const addUsername = e => {
-		e.preventDefault();
-
-		// Register the username
-		const username = document.getElementById("username").value;
-		sock.send(`USE_ALIAS␝${username}`);
-	};
-
-	var exports = {"__esModule": true};
+<script src="js/index.mjs" type="module">
 </script>
-<script src="js/blockies.js" type="module"></script>
 </html>
+
