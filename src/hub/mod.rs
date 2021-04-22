@@ -11,7 +11,8 @@ pub mod room;
 pub mod auth;
 
 use actix::{
-    fut, Actor, ActorFuture, Addr, AsyncContext, Context, Handler, StreamHandler, WrapFuture,
+    dev::MessageResponse, fut, Actor, ActorFuture, Addr, AsyncContext, Context, Handler,
+    StreamHandler, WrapFuture,
 };
 use actix_web_actors::ws::{Message as WsMessage, ProtocolError, WebsocketContext};
 use auth::{AssertContextAccessPermissible, AuthError, Authenticator, RegisterAlias};
@@ -19,6 +20,14 @@ use cmd::{Cmd, CmdTypes, JoinRoom};
 use msg::{Msg, NotifyTxt, PubMsg};
 use room::{Room, RoomError, SubscribeToRoom};
 use std::{collections::HashMap, convert::TryInto, sync::Arc};
+
+/// Lists the rooms managed by the hub.
+#[derive(Message)]
+#[rtype(result = "OpenRooms")]
+pub struct ListRooms;
+
+#[derive(MessageResponse)]
+pub struct OpenRooms(pub Vec<String>);
 
 /// Houses any number of chat rooms.
 #[derive(Default)]
@@ -34,6 +43,16 @@ impl Actor for Hub {
             self.topics
                 .insert((*room_name).to_owned(), Room::start_default());
         }
+    }
+}
+
+impl Handler<ListRooms> for Hub {
+    type Result = OpenRooms;
+
+    fn handle(&mut self, _msg: ListRooms, _ctx: &mut Self::Context) -> Self::Result {
+        // Clone the list of rooms, since the user will want to manipulate or otherwise display
+        // this data (e.g., through serialization). This can't occur if we have a borrow or Arc
+        OpenRooms(self.topics.keys().cloned().collect())
     }
 }
 
@@ -97,6 +116,9 @@ impl StreamHandler<Result<WsMessage, ProtocolError>> for WsSocket {
                             match res {
                                 Ok(res) => match res {
                                     Ok(room_addr) => {
+                                        // TODO: Allow for users to be in multiple rooms, but only
+                                        // get notifications for rooms that are in the BACKGROUND
+                                        act.joined_rooms.clear();
                                         act.joined_rooms.insert(room_name, room_addr);
                                     }
                                     Err(e) => ctx.text(format!("error: {:?}", e)),
@@ -124,7 +146,8 @@ impl StreamHandler<Result<WsMessage, ProtocolError>> for WsSocket {
                                     .send(AssertContextAccessPermissible {
                                         ctx: Some(msg.ctx.clone()),
                                         sending_alias: Some(msg.sender.clone()),
-                                        session: sess_addr,
+                                        session: Some(sess_addr),
+                                        email: None,
                                     })
                                     .into_actor(self)
                                     .map(move |res, _act, ctx| {

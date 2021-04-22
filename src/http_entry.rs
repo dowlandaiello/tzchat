@@ -1,10 +1,11 @@
 use super::hub::{
     auth::{
-        AssertJwtValid, AssumeIdentity, AuthError, Authenticator, ExecuteChallenge, ListAliases,
-        OauthSessionChallenge, RegisterSessionChallenge, HTTP_CHALLENGE_COOKIE_NAME,
-        HTTP_JWT_COOKIE_NAME,
+        AssertContextAccessPermissible, AssertJwtValid, AssumeIdentity, AuthError, Authenticator,
+        ExecuteChallenge, ListAliases, OauthSessionChallenge, RegisterSessionChallenge,
+        HTTP_CHALLENGE_COOKIE_NAME, HTTP_JWT_COOKIE_NAME,
     },
-    Hub, WsSocket,
+    msg::MsgContext,
+    Hub, ListRooms, WsSocket,
 };
 use actix::Addr;
 use actix_files::NamedFile;
@@ -15,6 +16,9 @@ use actix_web::{
     Error, HttpMessage, HttpRequest, HttpResponse,
 };
 use actix_web_actors::ws;
+use futures::{
+    stream::{self, StreamExt},
+};
 use oauth2::{basic::BasicClient, AuthorizationCode, CsrfToken, PkceCodeChallenge, Scope};
 use serde::Deserialize;
 use std::{path::PathBuf, sync::Arc};
@@ -178,4 +182,60 @@ pub async fn get_authenticated_aliases(
     Ok(HttpResponse::Ok()
         .content_type("application/json")
         .json(aliases))
+}
+
+/// Gets a list of the open channels that the user is allowed to be in.
+pub async fn get_allowed_rooms(
+    req: HttpRequest,
+    auth: web::Data<Addr<Authenticator>>,
+    hub: web::Data<Addr<Hub>>,
+) -> Result<HttpResponse, Error> {
+    // Ask the authenticator to validate and acquire the user's email from the JWT
+    let sess_email = Arc::new(
+        auth.send(AssertJwtValid(
+            req.cookie(HTTP_JWT_COOKIE_NAME)
+                .ok_or(AuthError::SessionNonexistent)?,
+        ))
+        .await
+        .map_err(|e| error::ErrorInternalServerError(e))??,
+    );
+    let rooms_stream = stream::iter(
+        hub.send(ListRooms)
+            .await
+            .map_err(|e| error::ErrorInternalServerError(e))?
+            .0
+            .into_iter(),
+    );
+
+    let auth_addr: Addr<Authenticator> = (**auth).clone();
+
+    // Only include rooms in the response that the currently authenticated user has access to
+    let rooms: Vec<String> = {
+        let auth_addr = &auth_addr;
+        let sess_email = &sess_email;
+
+        rooms_stream
+            .filter_map(|room| async move {
+                auth_addr
+                    .clone()
+                    .send(AssertContextAccessPermissible {
+                        ctx: Some(MsgContext::Channel(room.clone())),
+                        session: None,
+                        email: Some(sess_email.clone()),
+                        sending_alias: None,
+                    })
+                    .await
+                    .map_err(|e| AuthError::OauthError(e.to_string()))
+                    .flatten()
+                    .ok()
+                    .map(|_| room)
+            })
+            .collect::<Vec<String>>()
+            .await
+    };
+
+    // Respond with the rooms that the user can view
+    Ok(HttpResponse::Ok()
+        .content_type("application/json")
+        .json(rooms))
 }
