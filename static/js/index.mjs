@@ -16,20 +16,26 @@ const messageHolder = document.getElementById("messagesHolder");
 const messageTemplate = document.getElementById("message");
 
 sock.addEventListener("message", (e) => {
-	if (e.contains("error")) {
+	if (e.data.includes("error")) {
 		console.error(e);
 
 		return;
 	}
 
+	// TODO: Create a message queue that 
 	const rawMessage = e.data;
-	const [, , sender, msg] = rawMessage.split("␝");
+	let [, , sender, msg] = rawMessage.split("␝");
+
+	// Get all lines like:
+	// > Green text
+	msg = msg.replaceAll(/^(> {0,1}.+)(?=$|\n)/gm, '<span class="greentext">$1</span>');
+	msg = msg.replaceAll("\n", "<br>");
 
 	// Customize a message UI element to contain the message details
 	let messageNode = messageTemplate.content.cloneNode(true);
 
 	// Generate a blocky profile picture for the user
-	let pfp = createIcon({seed: "tzchat"});
+	let pfp = createIcon({seed: sender});
 	pfp.setAttribute("class", "pfp");
 	messageNode.querySelector(".pfp").replaceWith(pfp);
 
@@ -37,6 +43,7 @@ sock.addEventListener("message", (e) => {
 	messageNode.querySelector(".msg-text").innerHTML = msg;
 
 	messageHolder.appendChild(messageNode);
+	messageHolder.scrollTop = messageHolder.scrollHeight;
 });
 
 // The user wishes to join a room
@@ -66,6 +73,18 @@ window.handleJoinEvent = e => {
 const msgInput = document.getElementById("msgCts");
 const sendMsgButton = document.getElementById("sendMsg");
 
+msgInput.addEventListener("keypress", (e) => {
+	if (e.key != "Enter") {
+		return;
+	}
+
+	if (e.shiftKey) {
+		return;
+	}
+
+	sendMessage(e);
+})
+
 window.sendMessage = e => {
 	e.preventDefault();
 
@@ -77,6 +96,8 @@ window.sendMessage = e => {
 
 	// Send the message
 	sock.send(`MSG␝${currentRoom}␝${currentAlias}␝${msgInput.value}`);
+
+	msgInput.value = ""; 
 };
 
 sendMsgButton.addEventListener("touchend", window.sendMessage);

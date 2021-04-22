@@ -81,20 +81,40 @@ body {
   padding-right: 1rem;
 
   padding-top: 1rem;
+
+  overflow: scroll;
+  overflow-x: hidden;
 }
 
 .message {
+  display: flex;
+  flex-flow: row nowrap;
+  justify-content: start;
+  align-items: start;
+
   width: 100%;
 
-  font-family: "Montserrat", sans-serif
+  font-family: "Montserrat", sans-serif;
+
+  margin-top: 0.75rem;
 }
 
 .message-text>p {
+  display: flex;
+  flex-flow: column;
+  justify-content: space-between;
+  align-items: start;
+
   margin: 0;
+  margin-left: 1rem;
 }
 
 .message .author {
   font-weight: bold;
+}
+
+.greentext {
+  color: #789922;
 }
 
 /* The bottom message input */
@@ -104,7 +124,7 @@ body {
   flex-flow: row nowrap;
 }
 
-input[type="text"]#msgCts {
+textarea#msgCts {
   flex-grow: 1;
 
   background-color: #e3e3e3;
@@ -116,9 +136,11 @@ input[type="text"]#msgCts {
   border-left: none;
   border-right: none;
   border-bottom: none;
+
+  font-family: "Montserrat", sans-serif;
 }
 
-input[type="text"]:focus {
+textarea:focus {
   border-radius: 0;
   outline: none;
 }
@@ -140,6 +162,8 @@ input[type="text"]:focus {
   overflow: hidden;
 
   transition: 0.125s;
+
+  cursor: pointer;
 }
 
 #msgCts:focus + .send-button {
