@@ -11,7 +11,7 @@ pub const MSG_ARG_DELIM: &str = "␝";
 /// The character used to separate users in a group
 pub const USER_LIST_DELIM: &str = "␟";
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum MsgContext {
     /// The message is part of a DM between 2+ users
     Whisper(HashSet<Arc<String>>),

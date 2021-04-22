@@ -441,6 +441,7 @@ impl Handler<AssertContextAccessPermissible> for Authenticator {
 
         // The usernames associated with the current user. This is found because after the user
         // logs on, their session is matched with an email, which persists between sessions.
+        let empty_alias_set = HashSet::default();
         let session_aliases = self
             .user_aliases
             .get(
@@ -449,7 +450,7 @@ impl Handler<AssertContextAccessPermissible> for Authenticator {
                 // with the email
                 session,
             )
-            .ok_or(AuthError::SessionNonexistent)?;
+            .unwrap_or(&empty_alias_set);
 
         // If the user is claiming they are in a direct message, ensure that they own the alias
         // they are using in the direct message and that they are IN the message

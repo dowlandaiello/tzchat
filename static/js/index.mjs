@@ -15,6 +15,17 @@ const sock = new WebSocket(wsPath);
 const messageHolder = document.getElementById("messagesHolder");
 const messageTemplate = document.getElementById("message");
 
+sock.addEventListener("error", e => {
+	console.error(`couldn't connect: ${e}`);
+
+	// Clear cookies and reload
+	document.cookie.split(';').forEach(c => {
+		document.cookie = c.trim().split('=')[0] + '=;' + 'expires=Thu, 01 Jan 1970 00:00:00 UTC;';
+	});
+
+	location.reload();
+});
+
 sock.addEventListener("message", (e) => {
 	if (e.data.includes("error")) {
 		console.error(e);
@@ -128,7 +139,7 @@ const chooseAliasButton = document.getElementById("chooseAcc");
 let aliasModal = document.querySelector("#modal").content.cloneNode(true);
 aliasModal.getElementById("title").innerHTML = "Profiles";
 document.body.appendChild(aliasModal);
-document.getElementById("some-id").setAttribute("id", "aliasModal")
+document.getElementById("some-id").setAttribute("id", "aliasModal");
 
 aliasModal = document.querySelector("#aliasModal");
 
@@ -142,6 +153,7 @@ const chooseNewAlias = e => {
 	msgInput.setAttribute("placeholder", `Send a message as ${currentAlias}`)
 
 	reloadModal();
+	closeModal(aliasModal);
 };
 
 let choiceTemplate = newAliasButton.cloneNode(true);
@@ -184,18 +196,9 @@ chooseAliasButton.addEventListener("touchend", showAliasModal);
 chooseAliasButton.addEventListener("click", showAliasModal);
 
 // Let the user exit a modal
-const closeModal = e => {
-	e.preventDefault();
-
-	let enclosingModal = e.target.parentNode.parentNode.parentNode;
-	enclosingModal.removeAttribute("visible");
+const closeModal = modal => {
+	modal.removeAttribute("visible");
 };
-
-let closeModalButtons = document.querySelectorAll(".close-button");
-closeModalButtons.forEach((closeBtn) => {
-	closeBtn.addEventListener("touchend", closeModal);
-	closeBtn.addEventListener("click", closeModal);
-});
 
 // Handle clicks on the new username button
 const claimAlias = e => {
@@ -206,10 +209,83 @@ const claimAlias = e => {
 		return;
 	}
 
+	currentAlias = alias;
+	msgInput.setAttribute("placeholder", `Send a message as ${currentAlias}`)
+
 	// Claim the alias
 	sock.send(`USE_ALIAS␝${alias}`);
 	reloadModal();
+
+	// Assume the user just wants to use that alias
+	closeModal(aliasModal);
 }
 
 newAliasButton.addEventListener("touchend", claimAlias);
 newAliasButton.addEventListener("click", claimAlias);
+
+/* BEGIN MODAL FOR CHANNEL SELECTION */
+let channelModal = document.querySelector("#modal").content.cloneNode(true);
+channelModal.getElementById("title").innerHTML = "Channels";
+document.body.appendChild(channelModal);
+document.getElementById("some-id").setAttribute("id", "channelModal");
+
+channelModal = document.querySelector("#channelModal");
+channelModal.querySelector(".modal-note").remove();
+
+// Opens the channel modal upon clicking a button, for example. Doesn't require an event.
+const reloadChannelModal = () => fetch(
+		"/api/rooms", {credentials: "same-origin"}
+	)
+	.then(resp => resp.json())
+	.then(rooms => {
+		// Delete all previous labels
+		Array.from(channelModal.querySelectorAll("#choice")).filter(choiceLabel => choiceLabel.innerHTML !== "").forEach(label => label.remove());
+
+		let choiceTemplate = channelModal.querySelector("#choice");
+		let choicesContainer = channelModal.querySelector(".choices");
+
+		rooms.forEach(room => {
+			let choice = choiceTemplate.cloneNode(true);
+			choice.innerHTML = room;
+
+			// Upon choosing a channel, close the modal and reload the state
+			let joinRoomBtnCb = () => {
+				joinRoom(room);
+				reloadChannelModal();
+				closeModal(channelModal);
+			};
+
+			choice.addEventListener("touchend", joinRoomBtnCb);
+			choice.addEventListener("click", joinRoomBtnCb);
+
+			if (room === currentRoom) {
+				choice.setAttribute("style", "font-weight: bold");
+			}
+
+			choicesContainer.appendChild(choice);
+		});
+
+	});
+
+const openChannelModal = () => {
+	reloadChannelModal()
+	.then(() => channelModal.setAttribute("visible", true));
+};
+
+// Doesn't require an event either
+const hideChannelModal = () => {
+	channelModal.removeAttribute("visible");
+};
+
+// Open the channel selector when the dropdown is clicked
+let channelDropdown = document.querySelector(".channel-indicator");
+channelDropdown.addEventListener("touchend", openChannelModal);
+channelDropdown.addEventListener("click", openChannelModal);
+
+// Add a button to close both the channel & profile modals
+let closeModalButtons = document.querySelectorAll(".close-button");
+closeModalButtons.forEach((closeBtn) => {
+	closeBtn.addEventListener("touchend", () => closeModal(closeBtn.parentNode.parentNode.parentNode));
+	closeBtn.addEventListener("click", () => closeModal(closeBtn.parentNode.parentNode.parentNode));
+});
+

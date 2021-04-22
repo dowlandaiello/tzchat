@@ -65,6 +65,8 @@ body {
   align-items: center;
 
   border-bottom: 1px dashed black;
+
+  cursor: pointer;
 }
 
 .channel-indicator>span {
