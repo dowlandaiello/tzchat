@@ -36,7 +36,15 @@ pub async fn ws_index(
         .map_err(|e| error::ErrorInternalServerError(e))??;
 
     // Start the websocket chat
-    let (session, resp) = ws::start_with_addr(WsSocket::new((**hub).to_owned(), (**auth).to_owned()), &req, stream).map_err(|e| {error!("{:?}", e); e})?;
+    let (session, resp) = ws::start_with_addr(
+        WsSocket::new((**hub).to_owned(), (**auth).to_owned()),
+        &req,
+        stream,
+    )
+    .map_err(|e| {
+        error!("{:?}", e);
+        e
+    })?;
 
     // The user has now been authenticated
     auth.do_send(AssumeIdentity { session, email });
@@ -82,11 +90,7 @@ pub async fn oauth_callback(
             // Send the user to the homepage and save the JWT as a cookie
             Ok(HttpResponse::TemporaryRedirect()
                 .set_header("Location", "/index.html")
-                .cookie(
-                    Cookie::build(HTTP_JWT_COOKIE_NAME, jwt)
-                    .path("/")
-                        .finish(),
-                )
+                .cookie(Cookie::build(HTTP_JWT_COOKIE_NAME, jwt).path("/").finish())
                 .finish())
         }
     }
@@ -144,4 +148,19 @@ pub async fn ui_index(
 
     let path: PathBuf = "static/index.html".parse().unwrap();
     Ok(NamedFile::open(path)?.into_response(&req)?)
+}
+
+/// Gets a list of aliases belonging to the currently authenticated user.
+pub async fn get_authenticated_aliases(
+    req: HttpRequest,
+    auth: web::Data<Addr<Authenticator>>,
+) -> Result<HttpResponse, Error> {
+    // Ask the authenticator to validate and acquire the user's email from the JWT
+    let email = auth
+        .send(AssertJwtValid(
+            req.cookie(HTTP_JWT_COOKIE_NAME)
+                .ok_or(AuthError::SessionNonexistent)?,
+        ))
+        .await
+        .map_err(|e| error::ErrorInternalServerError(e))??;
 }

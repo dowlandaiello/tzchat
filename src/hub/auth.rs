@@ -50,6 +50,11 @@ pub struct ExecuteChallenge {
     pub client: Arc<BasicClient>,
 }
 
+/// Lists the aliases belonging to the user.
+#[derive(Message)]
+#[rtype(result = "Result<Vec<Arc<String>>, AuthError>")]
+pub struct ListAliases(Arc<String>);
+
 /// Returns an error if the given JWT is not valid. Returns the enclosed email if valid.
 #[derive(Message)]
 #[rtype(result = "Result<String, AuthError>")]
@@ -466,5 +471,20 @@ impl Handler<AssertContextAccessPermissible> for Authenticator {
         }
 
         Ok(())
+    }
+}
+
+impl Handler<ListAliases> for Authenticator {
+    type Result = Result<Vec<Arc<String>>, AuthError>;
+
+    fn handle(
+        &mut self,
+        msg: ListAliases,
+        _ctx: &mut Self::Context,
+    ) -> Self::Result {
+        self.user_aliases
+            .get(&msg.0)
+            .ok_or(AuthError::IllegalAlias)
+            .map(|aliases| aliases.iter().cloned().collect::<Vec<Arc<String>>>())
     }
 }
