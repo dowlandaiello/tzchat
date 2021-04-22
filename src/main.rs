@@ -10,7 +10,7 @@ use std::{
     sync::Arc,
 };
 use tzc::{
-    http_entry::{oauth_callback, ui_index, ws_index, get_authenticated_aliases},
+    http_entry::{oauth_callback, ui_index, ws_index, get_authenticated_aliases, get_allowed_rooms},
     hub::{auth::Authenticator, Hub},
 };
 
@@ -85,6 +85,7 @@ async fn main() -> std::io::Result<()> {
             .data(auth_addr.clone())
             .data(oauth_client.clone())
             .route("/api/aliases", web::get().to(get_authenticated_aliases))
+            .route("/api/rooms", web::get().to(get_allowed_rooms))
             .route("/index.html", web::get().to(ui_index))
             .route("/", web::get().to(ui_index))
             .service(web::resource("/oauth/callback").route(web::get().to(oauth_callback)))
