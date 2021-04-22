@@ -98,7 +98,8 @@ pub struct RegisterAlias(pub String, pub Addr<WsSocket>);
 pub struct AssertContextAccessPermissible {
     pub ctx: Option<MsgContext>,
     pub sending_alias: Option<Arc<String>>,
-    pub session: Addr<WsSocket>,
+    pub session: Option<Addr<WsSocket>>,
+    pub email: Option<Arc<String>>,
 }
 
 /// Any error while registering, logging in, accessing a resource, etc.
@@ -429,14 +430,24 @@ impl Handler<AssertContextAccessPermissible> for Authenticator {
         msg: AssertContextAccessPermissible,
         _ctx: &mut Self::Context,
     ) -> Result<(), AuthError> {
+        // Get the email of the user from their websocket address
+        let session: &Arc<String> = msg
+            .session
+            .as_ref()
+            .map(|sess| self.sessions.get(sess))
+            .flatten()
+            .or(msg.email.as_ref())
+            .ok_or(AuthError::SessionNonexistent)?;
+
         // The usernames associated with the current user. This is found because after the user
         // logs on, their session is matched with an email, which persists between sessions.
         let session_aliases = self
             .user_aliases
             .get(
-                self.sessions
-                    .get(&msg.session)
-                    .ok_or(AuthError::SessionNonexistent)?,
+                // The user will provide either a session or an email of the user. If they only
+                // provide a session, we will have to get their email. Otherwise, just continue
+                // with the email
+                session,
             )
             .ok_or(AuthError::SessionNonexistent)?;
 
@@ -456,16 +467,7 @@ impl Handler<AssertContextAccessPermissible> for Authenticator {
 
         // Ensure that the user is not claiming to be another person
         if let Some(sender) = msg.sending_alias {
-            if !self
-                .user_aliases
-                .get(
-                    self.sessions
-                        .get(&msg.session)
-                        .ok_or(AuthError::SessionNonexistent)?,
-                )
-                .ok_or(AuthError::SessionNonexistent)?
-                .contains(&sender)
-            {
+            if !session_aliases.contains(&sender) {
                 return Err(AuthError::IllegalAlias);
             }
         }
@@ -477,12 +479,9 @@ impl Handler<AssertContextAccessPermissible> for Authenticator {
 impl Handler<ListAliases> for Authenticator {
     type Result = Result<Vec<Arc<String>>, AuthError>;
 
-    fn handle(
-        &mut self,
-        msg: ListAliases,
-        _ctx: &mut Self::Context,
-    ) -> Self::Result {
-        Ok(self.user_aliases
+    fn handle(&mut self, msg: ListAliases, _ctx: &mut Self::Context) -> Self::Result {
+        Ok(self
+            .user_aliases
             .get(&msg.0)
             .map(|aliases| aliases.iter().cloned().collect::<Vec<Arc<String>>>())
             .unwrap_or(Vec::new()))
