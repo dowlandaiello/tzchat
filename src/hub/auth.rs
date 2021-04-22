@@ -482,9 +482,9 @@ impl Handler<ListAliases> for Authenticator {
         msg: ListAliases,
         _ctx: &mut Self::Context,
     ) -> Self::Result {
-        self.user_aliases
+        Ok(self.user_aliases
             .get(&msg.0)
-            .ok_or(AuthError::IllegalAlias)
             .map(|aliases| aliases.iter().cloned().collect::<Vec<Arc<String>>>())
+            .unwrap_or(Vec::new()))
     }
 }
