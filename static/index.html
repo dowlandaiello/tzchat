@@ -2,16 +2,57 @@
 <html lang="en-US">
 <head>
 	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>TZHS Student-Only Chat</title>
+	<link rel="stylesheet" href="styles/index.css">
+	<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+	<link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
 </head>
 <body>
-<script type="application/javascript">
-	// The domain the page is being served on
-	let [_, isHttps, domain] = document.location.toString().match(/http(s?):\/\/(.+)\//);
-	let wsPath = `${!isHttps ? "ws" : "wss"}://${domain}/ws/`;
-
-	// Websockets should be served from the root of the webpage + /ws/
-	const sock = new WebSocket(wsPath);
-</script>
+	<template id="message">
+		<div class="message">
+			<span class="pfp">
+			</span>
+			<div class="message-text">
+				<p class="author"></p>
+				<p class="msg-text"></p>
+			</div>
+		</div>
+	</template>
+	<template id="modal">
+		<div class="modal-wrapper" id="some-id">
+			<div class="modal">
+				<div class="nav-section">
+					<h1 id="title">Choices</h1>
+					<span class="material-icons close-button">close</span>
+				</div>
+				<div class="choices">
+					<p id="choice"></p>
+				</div>
+				<p class="modal-note">All messages are anonymous, but will be sent under your chosen username. A username can be owned by only one @stu.soscd.org email. You may claim as many usernames as necessary.</p>
+			</div>
+		</div>
+	</template>
+	<div class="navbar">
+		<div class="titlebar">
+			<h1>tzhs.chat</h1>
+			<div class="channel-indicator">
+				<h2 id="roomNameLabel"></h2>
+				<span class="material-icons">arrow_drop_down</span>
+			</div>
+		</div>
+		<span class="material-icons-outlined" id="chooseAcc">manage_accounts</span>
+	</div>
+	<div id="messagesHolder">
+	</div>
+	<div class="input-section">
+		<textarea type="text" placeholder="Send a message" id="msgCts"></textarea>
+		<div class="send-button" id="sendMsg">
+			<span class="material-icons">send</span>
+		</div>
+	</div>
 </body>
+<script src="js/index.mjs" type="module">
+</script>
 </html>
+

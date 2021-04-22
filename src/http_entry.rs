@@ -1,10 +1,11 @@
 use super::hub::{
     auth::{
-        AssertJwtValid, AssumeIdentity, AuthError, Authenticator, ExecuteChallenge,
-        OauthSessionChallenge, RegisterSessionChallenge, HTTP_CHALLENGE_COOKIE_NAME,
-        HTTP_JWT_COOKIE_NAME,
+        AssertContextAccessPermissible, AssertJwtValid, AssumeIdentity, AuthError, Authenticator,
+        ExecuteChallenge, ListAliases, OauthSessionChallenge, RegisterSessionChallenge,
+        HTTP_CHALLENGE_COOKIE_NAME, HTTP_JWT_COOKIE_NAME,
     },
-    Hub, WsSocket,
+    msg::MsgContext,
+    Hub, ListRooms, WsSocket,
 };
 use actix::Addr;
 use actix_files::NamedFile;
@@ -15,6 +16,9 @@ use actix_web::{
     Error, HttpMessage, HttpRequest, HttpResponse,
 };
 use actix_web_actors::ws;
+use futures::{
+    stream::{self, StreamExt},
+};
 use oauth2::{basic::BasicClient, AuthorizationCode, CsrfToken, PkceCodeChallenge, Scope};
 use serde::Deserialize;
 use std::{path::PathBuf, sync::Arc};
@@ -36,7 +40,15 @@ pub async fn ws_index(
         .map_err(|e| error::ErrorInternalServerError(e))??;
 
     // Start the websocket chat
-    let (session, resp) = ws::start_with_addr(WsSocket::new((**hub).to_owned()), &req, stream).map_err(|e| {error!("{:?}", e); e})?;
+    let (session, resp) = ws::start_with_addr(
+        WsSocket::new((**hub).to_owned(), (**auth).to_owned()),
+        &req,
+        stream,
+    )
+    .map_err(|e| {
+        error!("{:?}", e);
+        e
+    })?;
 
     // The user has now been authenticated
     auth.do_send(AssumeIdentity { session, email });
@@ -82,11 +94,7 @@ pub async fn oauth_callback(
             // Send the user to the homepage and save the JWT as a cookie
             Ok(HttpResponse::TemporaryRedirect()
                 .set_header("Location", "/index.html")
-                .cookie(
-                    Cookie::build(HTTP_JWT_COOKIE_NAME, jwt)
-                    .path("/")
-                        .finish(),
-                )
+                .cookie(Cookie::build(HTTP_JWT_COOKIE_NAME, jwt).path("/").finish())
                 .finish())
         }
     }
@@ -144,4 +152,90 @@ pub async fn ui_index(
 
     let path: PathBuf = "static/index.html".parse().unwrap();
     Ok(NamedFile::open(path)?.into_response(&req)?)
+}
+
+/// Gets a list of aliases belonging to the currently authenticated user.
+pub async fn get_authenticated_aliases(
+    req: HttpRequest,
+    auth: web::Data<Addr<Authenticator>>,
+) -> Result<HttpResponse, Error> {
+    // Ask the authenticator to validate and acquire the user's email from the JWT
+    let email = auth
+        .send(AssertJwtValid(
+            req.cookie(HTTP_JWT_COOKIE_NAME)
+                .ok_or(AuthError::SessionNonexistent)?,
+        ))
+        .await
+        .map_err(|e| error::ErrorInternalServerError(e))??;
+
+    // Get the authenticated user's aliases. We'll need to clone each of the aliases, since Serde
+    // shouldn't do it for us.
+    let aliases = auth
+        .send(ListAliases(Arc::new(email)))
+        .await
+        .map_err(|e| error::ErrorInternalServerError(e))??
+        .into_iter()
+        .map(|arc_alias: Arc<String>| (*arc_alias).clone())
+        .collect::<Vec<String>>();
+
+    // Respond with these aliases as JSON
+    Ok(HttpResponse::Ok()
+        .content_type("application/json")
+        .json(aliases))
+}
+
+/// Gets a list of the open channels that the user is allowed to be in.
+pub async fn get_allowed_rooms(
+    req: HttpRequest,
+    auth: web::Data<Addr<Authenticator>>,
+    hub: web::Data<Addr<Hub>>,
+) -> Result<HttpResponse, Error> {
+    // Ask the authenticator to validate and acquire the user's email from the JWT
+    let sess_email = Arc::new(
+        auth.send(AssertJwtValid(
+            req.cookie(HTTP_JWT_COOKIE_NAME)
+                .ok_or(AuthError::SessionNonexistent)?,
+        ))
+        .await
+        .map_err(|e| error::ErrorInternalServerError(e))??,
+    );
+    let rooms_stream = stream::iter(
+        hub.send(ListRooms)
+            .await
+            .map_err(|e| error::ErrorInternalServerError(e))?
+            .0
+            .into_iter(),
+    );
+
+    let auth_addr: Addr<Authenticator> = (**auth).clone();
+
+    // Only include rooms in the response that the currently authenticated user has access to
+    let rooms: Vec<String> = {
+        let auth_addr = &auth_addr;
+        let sess_email = &sess_email;
+
+        rooms_stream
+            .filter_map(|room| async move {
+                auth_addr
+                    .clone()
+                    .send(AssertContextAccessPermissible {
+                        ctx: Some(MsgContext::Channel(room.clone())),
+                        session: None,
+                        email: Some(sess_email.clone()),
+                        sending_alias: None,
+                    })
+                    .await
+                    .map_err(|e| AuthError::OauthError(e.to_string()))
+                    .flatten()
+                    .ok()
+                    .map(|_| room)
+            })
+            .collect::<Vec<String>>()
+            .await
+    };
+
+    // Respond with the rooms that the user can view
+    Ok(HttpResponse::Ok()
+        .content_type("application/json")
+        .json(rooms))
 }

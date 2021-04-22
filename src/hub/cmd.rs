@@ -5,14 +5,15 @@ use super::{
 use actix::{Addr, Message, Recipient};
 use std::{error::Error, fmt, str::FromStr, sync::Arc};
 
-pub const CMD_NAMES: [(&str, CmdTypes); 2] =
-    [("MSG", CmdTypes::Msg), ("JOIN_ROOM", CmdTypes::JoinRoom)];
+pub const CMD_NAMES: [(&str, CmdTypes); 3] =
+    [("MSG", CmdTypes::Msg), ("JOIN_ROOM", CmdTypes::JoinRoom), ("USE_ALIAS", CmdTypes::UseAlias)];
 
 /// The types of commands able to be issued by users.
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum CmdTypes {
     Msg,
     JoinRoom,
+    UseAlias,
 }
 
 /// Users issue commands in the following format:

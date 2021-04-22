@@ -141,6 +141,8 @@ impl Handler<SubscribeToRoom> for MsgCache {
     type Result = ();
 
     fn handle(&mut self, msg: SubscribeToRoom, _ctx: &mut Context<Self>) -> Self::Result {
+        info!("beginning bootstrap procedure for a new user");
+
         // TODO: This is a naive implementation. We'll want to determine the number of messages
         // that can be reliably transferred at once and then lazily load the rest.
         //
