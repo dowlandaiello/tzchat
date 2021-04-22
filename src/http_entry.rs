@@ -1,6 +1,6 @@
 use super::hub::{
     auth::{
-        AssertJwtValid, AssumeIdentity, AuthError, Authenticator, ExecuteChallenge,
+        AssertJwtValid, AssumeIdentity, AuthError, Authenticator, ExecuteChallenge, ListAliases,
         OauthSessionChallenge, RegisterSessionChallenge, HTTP_CHALLENGE_COOKIE_NAME,
         HTTP_JWT_COOKIE_NAME,
     },
@@ -163,4 +163,19 @@ pub async fn get_authenticated_aliases(
         ))
         .await
         .map_err(|e| error::ErrorInternalServerError(e))??;
+
+    // Get the authenticated user's aliases. We'll need to clone each of the aliases, since Serde
+    // shouldn't do it for us.
+    let aliases = auth
+        .send(ListAliases(Arc::new(email)))
+        .await
+        .map_err(|e| error::ErrorInternalServerError(e))??
+        .into_iter()
+        .map(|arc_alias: Arc<String>| (*arc_alias).clone())
+        .collect::<Vec<String>>();
+
+    // Respond with these aliases as JSON
+    Ok(HttpResponse::Ok()
+        .content_type("application/json")
+        .json(aliases))
 }

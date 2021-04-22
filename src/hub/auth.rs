@@ -53,7 +53,7 @@ pub struct ExecuteChallenge {
 /// Lists the aliases belonging to the user.
 #[derive(Message)]
 #[rtype(result = "Result<Vec<Arc<String>>, AuthError>")]
-pub struct ListAliases(Arc<String>);
+pub struct ListAliases(pub Arc<String>);
 
 /// Returns an error if the given JWT is not valid. Returns the enclosed email if valid.
 #[derive(Message)]
