@@ -70,8 +70,7 @@ const joinRoom = roomName => {
 
 	// Show the user the new room
 	document.title = `#${currentRoom}: tzhs.chat`
-	messageHolder.value = "";
-
+	messageHolder.innerHTML = "";
 };
 
 window.handleJoinEvent = e => {
