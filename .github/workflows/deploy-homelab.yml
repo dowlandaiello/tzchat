@@ -11,6 +11,4 @@ jobs:
       - name: Build and start actix server
         run: |
           cd repo
-          $HOME/.cargo/bin/cargo build
-          systemctl --user daemon-reload
-          systemctl --user restart tzchat
+          diff <(git diff HEAD~1 src | wc -c | xargs) <(echo "0") || ($HOME/.cargo/bin/cargo build && systemctl --user daemon-reload && systemctl --user restart tzchat)

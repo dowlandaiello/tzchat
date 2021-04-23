@@ -117,6 +117,7 @@ body {
 
 .greentext {
   color: #789922;
+  margin: 0;
 }
 
 /* The bottom message input */
@@ -169,6 +170,15 @@ textarea:focus {
 }
 
 #msgCts:focus + .send-button {
+  max-width: 10%;
+
+  padding-left: 1rem;
+  padding-right: 1rem;
+
+  visibility: visible;
+}
+
+.send-button:active {
   max-width: 10%;
 
   padding-left: 1rem;
