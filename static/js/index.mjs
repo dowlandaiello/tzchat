@@ -231,6 +231,61 @@ document.getElementById("some-id").setAttribute("id", "channelModal");
 channelModal = document.querySelector("#channelModal");
 channelModal.querySelector(".modal-note").remove();
 
+let choicesContainer = channelModal.querySelector(".choices");
+
+let roomChoiceTemplate = channelModal.querySelector("#choice");
+
+// Creates the room with the given context (i.e., usernames and etc)
+const createChannel = ctx => fetch(
+		"/api/room", { method: "POST", credentials: "same-origin", body: JSON.stringify(ctx), headers: { "Content-Type": "application/json" } }
+	)
+	.then(() => reloadChannelModal())
+	.catch(errror => alert(error));
+
+// Add a button for making new channels. Will just show a prompt.
+let createChannelButton = roomChoiceTemplate.cloneNode(true);
+const handleCreateChannel = e => {
+	// The user should just input a singular string
+	const channelName = prompt("Enter desired channel name");
+
+	if (!channelName) {
+		return alert("Channel name must not be empty");
+	}
+
+	createChannel({ users: [ channelName ] });
+};
+
+createChannelButton.innerHTML = "Create a new Channel +";
+createChannelButton.setAttribute("style", "font-weight: bold");
+
+createChannelButton.addEventListener("click", handleCreateChannel);
+createChannelButton.addEventListener("touchend", handleCreateChannel);
+
+// Add a button for making multiple users in a priate DM
+let createDmButton = roomChoiceTemplate.cloneNode(true);
+const handleCreateDm = e => {
+	// These should be comma-separated.
+	let users = prompt("Enter each username to be included in the DM").match(/(?!\s)[^$,\n]+/g);
+
+	if (!users) {
+		return alert("DM must be composed of users.");
+	}
+
+	createChannel({ users: users });
+};
+
+createDmButton.innerHTML = "Create a new DM +";
+createDmButton.setAttribute("style", "font-weight: bold");
+
+createDmButton.addEventListener("click", handleCreateDm);
+createDmButton.addEventListener("touchend", handleCreateDm);
+
+const btnContainer = channelModal.querySelector(".side-by-side").cloneNode(true);
+btnContainer.appendChild(createChannelButton);
+btnContainer.appendChild(createDmButton);
+
+choicesContainer.appendChild(btnContainer);
+
 // Opens the channel modal upon clicking a button, for example. Doesn't require an event.
 const reloadChannelModal = () => fetch(
 		"/api/rooms", {credentials: "same-origin"}
@@ -238,13 +293,11 @@ const reloadChannelModal = () => fetch(
 	.then(resp => resp.json())
 	.then(rooms => {
 		// Delete all previous labels
-		Array.from(channelModal.querySelectorAll("#choice")).filter(choiceLabel => choiceLabel.innerHTML !== "").forEach(label => label.remove());
+		Array.from(channelModal.querySelectorAll("#choice")).filter(choiceLabel => choiceLabel.innerHTML !== "" && choiceLabel !== createDmButton && choiceLabel !== createChannelButton).forEach(label => label.remove());
 
-		let choiceTemplate = channelModal.querySelector("#choice");
-		let choicesContainer = channelModal.querySelector(".choices");
 
 		rooms.forEach(room => {
-			let choice = choiceTemplate.cloneNode(true);
+			let choice = roomChoiceTemplate.cloneNode(true);
 			choice.innerHTML = room;
 
 			// Upon choosing a channel, close the modal and reload the state
@@ -261,7 +314,7 @@ const reloadChannelModal = () => fetch(
 				choice.setAttribute("style", "font-weight: bold");
 			}
 
-			choicesContainer.appendChild(choice);
+			choicesContainer.insertBefore(choice, btnContainer);
 		});
 
 	});

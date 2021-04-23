@@ -272,6 +272,21 @@ textarea:focus {
   cursor: pointer;
 }
 
+.side-by-side {
+  display: flex;
+  flex-flow: row nowrap;
+
+  align-items: center;
+  justify-content: center;
+}
+
+.side-by-side>* {
+  margin-left: 1rem;
+  margin-right: 1rem;
+
+  cursor: pointer;
+}
+
 .modal-note {
   position: absolute;
 

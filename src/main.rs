@@ -86,7 +86,7 @@ async fn main() -> std::io::Result<()> {
             .data(oauth_client.clone())
             .route("/api/aliases", web::get().to(get_authenticated_aliases))
             .route("/api/rooms", web::get().to(get_allowed_rooms))
-            .route("/api/rooms", web::post().to(create_room))
+            .service(create_room)
             .route("/index.html", web::get().to(ui_index))
             .route("/", web::get().to(ui_index))
             .service(web::resource("/oauth/callback").route(web::get().to(oauth_callback)))

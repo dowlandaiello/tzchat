@@ -239,32 +239,37 @@ pub async fn get_allowed_rooms(
         .json(rooms))
 }
 
-/// An intermediary between a raw text JSON input and a structured message context.
 #[derive(Deserialize)]
-pub enum CreateRoomReq {
-    Whisper(Vec<String>),
-    Channel(String),
+pub struct ReqCreateRoom {
+    users: Vec<String>,
 }
 
 /// Creates a new room from the list of usernames or single channel name given in the request.
+#[actix_web::post("/api/room")]
 pub async fn create_room(
     req: HttpRequest,
-    web::Json(req_room): web::Json<CreateRoomReq>,
+    req_room: web::Json<ReqCreateRoom>,
     auth: web::Data<Addr<Authenticator>>,
     hub: web::Data<Addr<Hub>>,
 ) -> Result<HttpResponse, Error> {
     // Authenticate the user
     let email = Some(Arc::new(get_session_email!(auth, req)));
 
+    let ReqCreateRoom { mut users } = req_room.0;
+
     // Turn a Vec<String> into HashSet<Arc<String>>
-    let ctx = match req_room {
-        CreateRoomReq::Whisper(users) => MsgContext::Whisper(
-            users
+    let ctx = match users.len() {
+        1 => MsgContext::Channel(
+                users
+                .pop()
+                .ok_or(error::ErrorInternalServerError("invalid room"))?,
+        ),
+        _ => MsgContext::Whisper(
+                users
                 .into_iter()
                 .map(|user| Arc::new(user))
                 .collect::<HashSet<Arc<String>>>(),
         ),
-        CreateRoomReq::Channel(name) => MsgContext::Channel(name),
     };
 
     // Ensure the user is allowed to access the channel they want to create
