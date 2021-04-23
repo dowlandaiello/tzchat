@@ -39,7 +39,7 @@ sock.addEventListener("message", (e) => {
 
 	// Get all lines like:
 	// > Green text
-	msg = msg.replaceAll(/^(> {0,1}.+)(?=$|\n)/gm, '<span class="greentext">$1</span>');
+	msg = msg.replaceAll(/^(> {0,1}.+)$|\n/gm, '<span class="greentext">$1</span>');
 	msg = msg.replaceAll("\n", "<br>");
 
 	// Customize a message UI element to contain the message details
