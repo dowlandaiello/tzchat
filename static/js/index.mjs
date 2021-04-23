@@ -288,3 +288,13 @@ closeModalButtons.forEach((closeBtn) => {
 	closeBtn.addEventListener("click", () => closeModal(closeBtn.parentNode.parentNode.parentNode));
 });
 
+window.onkeydown = e => {
+	if (e.key === "escape") {
+		// Close any open modals
+		if (openChannelModal.hasAttribute("visible")) {
+			closeModal(openChannelModal);
+		} else if (aliasModal.hasAttribute("visible")) {
+			closeModal(aliasModal);
+		}
+	}
+};
