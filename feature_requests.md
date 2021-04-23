@@ -1,0 +1,1 @@
+- Some kind of bot that subscribes to rooms
