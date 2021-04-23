@@ -5,7 +5,7 @@ use super::hub::{
         HTTP_CHALLENGE_COOKIE_NAME, HTTP_JWT_COOKIE_NAME,
     },
     msg::MsgContext,
-    Hub, ListRooms, WsSocket,
+    CreateRoom, Hub, ListRooms, WsSocket,
 };
 use actix::Addr;
 use actix_files::NamedFile;
@@ -16,12 +16,24 @@ use actix_web::{
     Error, HttpMessage, HttpRequest, HttpResponse,
 };
 use actix_web_actors::ws;
-use futures::{
-    stream::{self, StreamExt},
-};
+use futures::stream::{self, StreamExt};
 use oauth2::{basic::BasicClient, AuthorizationCode, CsrfToken, PkceCodeChallenge, Scope};
 use serde::Deserialize;
-use std::{path::PathBuf, sync::Arc};
+use std::{collections::HashSet, path::PathBuf, sync::Arc};
+
+// Derives the email from the session cookie
+macro_rules! get_session_email {
+    ($auth:ident, $req:ident) => {
+        // Ask the authenticator to validate and acquire the user's email from the JWT
+        $auth
+            .send(AssertJwtValid(
+                $req.cookie(HTTP_JWT_COOKIE_NAME)
+                    .ok_or(AuthError::SessionNonexistent)?,
+            ))
+            .await
+            .map_err(|e| error::ErrorInternalServerError(e))??
+    };
+}
 
 /// Establishes a websockets connection to the server
 pub async fn ws_index(
@@ -160,13 +172,7 @@ pub async fn get_authenticated_aliases(
     auth: web::Data<Addr<Authenticator>>,
 ) -> Result<HttpResponse, Error> {
     // Ask the authenticator to validate and acquire the user's email from the JWT
-    let email = auth
-        .send(AssertJwtValid(
-            req.cookie(HTTP_JWT_COOKIE_NAME)
-                .ok_or(AuthError::SessionNonexistent)?,
-        ))
-        .await
-        .map_err(|e| error::ErrorInternalServerError(e))??;
+    let email = get_session_email!(auth, req);
 
     // Get the authenticated user's aliases. We'll need to clone each of the aliases, since Serde
     // shouldn't do it for us.
@@ -191,14 +197,7 @@ pub async fn get_allowed_rooms(
     hub: web::Data<Addr<Hub>>,
 ) -> Result<HttpResponse, Error> {
     // Ask the authenticator to validate and acquire the user's email from the JWT
-    let sess_email = Arc::new(
-        auth.send(AssertJwtValid(
-            req.cookie(HTTP_JWT_COOKIE_NAME)
-                .ok_or(AuthError::SessionNonexistent)?,
-        ))
-        .await
-        .map_err(|e| error::ErrorInternalServerError(e))??,
-    );
+    let sess_email = Arc::new(get_session_email!(auth, req));
     let rooms_stream = stream::iter(
         hub.send(ListRooms)
             .await
@@ -238,4 +237,50 @@ pub async fn get_allowed_rooms(
     Ok(HttpResponse::Ok()
         .content_type("application/json")
         .json(rooms))
+}
+
+/// An intermediary between a raw text JSON input and a structured message context.
+#[derive(Deserialize)]
+pub enum CreateRoomReq {
+    Whisper(Vec<String>),
+    Channel(String),
+}
+
+/// Creates a new room from the list of usernames or single channel name given in the request.
+pub async fn create_room(
+    req: HttpRequest,
+    web::Json(req_room): web::Json<CreateRoomReq>,
+    auth: web::Data<Addr<Authenticator>>,
+    hub: web::Data<Addr<Hub>>,
+) -> Result<HttpResponse, Error> {
+    // Authenticate the user
+    let email = Some(Arc::new(get_session_email!(auth, req)));
+
+    // Turn a Vec<String> into HashSet<Arc<String>>
+    let ctx = match req_room {
+        CreateRoomReq::Whisper(users) => MsgContext::Whisper(
+            users
+                .into_iter()
+                .map(|user| Arc::new(user))
+                .collect::<HashSet<Arc<String>>>(),
+        ),
+        CreateRoomReq::Channel(name) => MsgContext::Channel(name),
+    };
+
+    // Ensure the user is allowed to access the channel they want to create
+    auth.send(AssertContextAccessPermissible {
+        ctx: Some(ctx.clone()),
+        email,
+        sending_alias: None,
+        session: None,
+    })
+    .await
+    .map_err(|e| error::ErrorInternalServerError(e))??;
+
+    // Create the room
+    hub.send(CreateRoom(ctx))
+        .await
+        .map_err(|e| error::ErrorInternalServerError(e))??;
+
+    Ok(HttpResponse::Ok().finish())
 }

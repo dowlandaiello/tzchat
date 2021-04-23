@@ -17,7 +17,7 @@ use actix::{
 use actix_web_actors::ws::{Message as WsMessage, ProtocolError, WebsocketContext};
 use auth::{AssertContextAccessPermissible, AuthError, Authenticator, RegisterAlias};
 use cmd::{Cmd, CmdTypes, JoinRoom};
-use msg::{Msg, NotifyTxt, PubMsg};
+use msg::{Msg, MsgContext, NotifyTxt, PubMsg};
 use room::{Room, RoomError, SubscribeToRoom};
 use std::{collections::HashMap, convert::TryInto, sync::Arc};
 
@@ -25,6 +25,11 @@ use std::{collections::HashMap, convert::TryInto, sync::Arc};
 #[derive(Message)]
 #[rtype(result = "OpenRooms")]
 pub struct ListRooms;
+
+/// Creates a new room or DM from the context.
+#[derive(Message)]
+#[rtype(result = "Result<(), RoomError>")]
+pub struct CreateRoom(pub MsgContext);
 
 #[derive(MessageResponse)]
 pub struct OpenRooms(pub Vec<String>);
@@ -43,6 +48,23 @@ impl Actor for Hub {
             self.topics
                 .insert((*room_name).to_owned(), Room::start_default());
         }
+    }
+}
+
+impl Handler<CreateRoom> for Hub {
+    type Result = Result<(), RoomError>;
+
+    fn handle(&mut self, msg: CreateRoom, _ctx: &mut Self::Context) -> Self::Result {
+        let room_name = msg.0.to_string();
+
+        // Ensure the room isn't a duplicate
+        if self.topics.contains_key(&room_name) {
+            return Err(RoomError::ConflictingResource);
+        }
+
+        self.topics.insert(room_name, Room::start_default());
+
+        Ok(())
     }
 }
 
@@ -193,7 +215,7 @@ impl StreamHandler<Result<WsMessage, ProtocolError>> for WsSocket {
                         } else {
                             ctx.text(format!("error: missing alias"))
                         }
-                    }
+                    },
                 },
                 Err(e) => ctx.text(format!("error: {:?}", e)),
             },

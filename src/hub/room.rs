@@ -4,6 +4,7 @@ use actix::{
     Handler, MailboxError, Recipient, WrapFuture,
 };
 use std::{collections::HashSet, error::Error, fmt, sync::Arc};
+use actix_web::{error::ResponseError, dev::HttpResponseBuilder, HttpResponse, http::{header, StatusCode}};
 use tokio::time::Duration;
 
 /// The default rooms spawned at program start.
@@ -14,8 +15,27 @@ pub const DEFAULT_ROOMS: [&str; 5] = ["general", "freshmen", "sophomores", "juni
 pub enum RoomError {
     NotAuthorized,
     RoomDoesNotExist,
+    ConflictingResource,
     MailboxError(MailboxError),
     Misc(String),
+}
+
+impl ResponseError for RoomError {
+    fn error_response(&self) -> HttpResponse {
+        HttpResponseBuilder::new(self.status_code())
+            .set_header(header::CONTENT_TYPE, "text/html; charset=utf-8")
+            .body(self.to_string())
+    }
+
+    fn status_code(&self) -> StatusCode {
+        match self {
+            Self::NotAuthorized => StatusCode::FORBIDDEN,
+            Self::RoomDoesNotExist => StatusCode::NOT_FOUND,
+            Self::ConflictingResource => StatusCode::CONFLICT,
+            Self::MailboxError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::Misc(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
 }
 
 impl fmt::Display for RoomError {
@@ -23,6 +43,7 @@ impl fmt::Display for RoomError {
         match self {
             Self::NotAuthorized => write!(f, "not authorized to access this resource"),
             Self::RoomDoesNotExist => write!(f, "room does not exist"),
+            Self::ConflictingResource => write!(f, "resource already exists"),
             Self::MailboxError(e) => e.fmt(f),
             Self::Misc(e) => e.fmt(f),
         }
