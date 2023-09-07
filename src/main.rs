@@ -10,7 +10,10 @@ use std::{
     sync::Arc,
 };
 use tzc::{
-    http_entry::{oauth_callback, ui_index, ws_index, get_authenticated_aliases, get_allowed_rooms, create_room},
+    http_entry::{
+        create_room, get_allowed_rooms, get_authenticated_aliases, oauth_callback, ui_index,
+        ws_index,
+    },
     hub::{auth::Authenticator, Hub},
 };
 
@@ -50,31 +53,6 @@ async fn main() -> std::io::Result<()> {
             .expect("failed to parse redirect URL"),
         ),
     );
-    // Load the SSL config by reading env variables for cert and key paths
-    // NOTE: SSL isn't necessary since we are reverse proxying through apache, which DOES use a
-    // cert + key
-    let _ssl_config = {
-        // NOTE: The SSL_CERT_PATH and SSL_KEY_PATH environment variables can be used to specify
-        // where SSL files lie
-        let mut cert_file = BufReader::new(File::open(
-            env::var("SSL_CERT_PATH").unwrap_or("cert.pem".to_owned()),
-        )?);
-        let mut key_file = BufReader::new(File::open(
-            env::var("SSL_KEY_PATH").unwrap_or("key.pem".to_owned()),
-        )?);
-
-        let certs = pemfile::certs(&mut cert_file)
-            .map_err(|_| Error::new(ErrorKind::InvalidData, "failed to decode SSL cert"))?;
-        let key = pemfile::pkcs8_private_keys(&mut key_file)
-            .map_err(|_| Error::new(ErrorKind::InvalidData, "failed to decode SSL key"))
-            .map(|mut keys| keys.remove(0))?;
-
-        // Register cert and keys with an empty SSL config
-        let mut conf = ServerConfig::new(NoClientAuth::new());
-        conf.set_single_cert(certs, key)
-            .map_err(|e| Error::new(ErrorKind::Other, e))?;
-        conf
-    };
 
     let hub_addr: Addr<Hub> = Hub::start_default();
     let auth_addr: Addr<Authenticator> = Authenticator::start_default();
