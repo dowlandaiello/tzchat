@@ -108,7 +108,6 @@ pub enum AuthError {
     AliasTaken,
     SessionNonexistent,
     PermissionDenied,
-    NotStudent,
     IllegalAlias,
     InvalidToken,
     DecryptionError,
@@ -146,7 +145,7 @@ impl ResponseError for AuthError {
         match self {
             Self::AliasTaken => StatusCode::CONFLICT,
             Self::SessionNonexistent => StatusCode::UNAUTHORIZED,
-            Self::PermissionDenied | Self::NotStudent => StatusCode::FORBIDDEN,
+            Self::PermissionDenied => StatusCode::FORBIDDEN,
             Self::IllegalAlias | Self::InvalidToken => StatusCode::BAD_REQUEST,
             Self::DecryptionError | Self::EncryptionError => StatusCode::INTERNAL_SERVER_ERROR,
             Self::SerializationError(_) | Self::OauthError(_) => StatusCode::INTERNAL_SERVER_ERROR,
@@ -160,7 +159,6 @@ impl fmt::Display for AuthError {
             Self::AliasTaken => write!(f, "username taken"),
             Self::SessionNonexistent => write!(f, "session does not exist"),
             Self::PermissionDenied => write!(f, "access to the requested resource denied"),
-            Self::NotStudent => write!(f, "tzhs.chat is only accessible to students with @stu.socsd.org emails at this point in time"),
             Self::IllegalAlias => write!(f, "illegal username"),
             Self::InvalidToken => write!(f, "invalid token"),
             Self::DecryptionError => write!(f, "failed to decrypt message"),
@@ -307,8 +305,10 @@ impl Handler<ExecuteChallenge> for Authenticator {
                 .email_addresses
                 .into_iter()
                 .map(|entry: Entry| entry.value)
-                .find(|email| email.ends_with("@stu.socsd.org"))
-                .ok_or(AuthError::NotStudent)?;
+                .next()
+                .ok_or(AuthError::OauthError(String::from(
+                    "No email associated with account",
+                )))?;
 
             // Generate a JWT from the email
             let jwt = bincode::serialize(&IdentityAttestation {
@@ -346,11 +346,6 @@ impl<'a> Handler<AssertJwtValid<'a>> for Authenticator {
         // verify it. Then, move out the email.
         let jwt: IdentityAttestation =
             bincode::deserialize(&jwt).map_err(|e| AuthError::SerializationError(e.to_string()))?;
-
-        // Only students in the student domain of SOCSD can log in
-        if !jwt.email.ends_with("@stu.socsd.org") {
-            return Err(AuthError::NotStudent);
-        }
 
         self.claimant_keypair
             .verify(jwt.email.as_bytes(), &jwt.sig)
