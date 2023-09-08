@@ -73,7 +73,7 @@ async fn main() -> std::io::Result<()> {
             .service(Files::new("/", "./static"))
     })
     //.bind_rustls("0.0.0.0:3327", ssl_config)?
-    .bind("0.0.0.0:80")?
+    .bind("0.0.0.0:3328")?
     .run()
     .await
 }
